@@ -1,4 +1,4 @@
-M5Stack LovyanLauncher
+M5Stack Lovyan ToyBox
 ===
 
 M5Stack用 らびやんの実験的な何か
@@ -31,10 +31,10 @@ FACES/JoyStick/PLUSEncoder/CardKB にも対応しています。
 ## Requirement
 動作には以下のライブラリが必要です。  
 
+* https://github.com/kosme/arduinoFFT/  
 * https://github.com/tobozo/M5Stack-SD-Updater/  
 * https://github.com/lovyan03/M5Stack_TreeView/  
 * https://github.com/lovyan03/M5Stack_OnScreenKeyboard/  
-* https://github.com/kosme/arduinoFFT/  
 
 
 ## Licence
