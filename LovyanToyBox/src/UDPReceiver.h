@@ -7,7 +7,7 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 
-class UDPReciever : public MenuCallBack
+class UDPReceiver : public MenuCallBack
 {
 
 
@@ -20,7 +20,7 @@ class UDPReciever : public MenuCallBack
   uint8_t udpbuf[UDP_BUF_LEN];
   std::vector<uint16_t> bmpbuf;
 public:
-  UDPReciever() {}
+  UDPReceiver() {}
   bool setup()
   {
     M5.Lcd.setTextColor(0xFFFF, 0);

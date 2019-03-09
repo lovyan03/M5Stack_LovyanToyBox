@@ -8,7 +8,7 @@
 #include "src/ScrollDemo.h"
 #include "src/MPU9250Demo.h"
 #include "src/IP5306RegEdit.h"
-#include "src/UDPReciever.h"
+#include "src/UDPReceiver.h"
 #include "src/AD34FFTTaskDemo.h"
 #include "src/ADInputDemo.h"
 
@@ -81,7 +81,7 @@ void setup() {
   treeView.usePLUSEncoder = true;
 
   treeView.setItems(vmi
-               { new MenuItem("ScreenShotReciever", callBackExec<UDPReciever>)
+               { new MenuItem("ScreenShotReceiver", callBackExec<UDPReceiver>)
                , new MenuItem("ScrollDemo"   , callBackExec<ScrollDemo>)
                , new MenuItem("MPU9250Demo"  , callBackExec<MPU9250Demo>)
                , new MenuItem("ADInputDemo"  , callBackExec<ADInputDemo>)
