@@ -75,32 +75,29 @@ public:
     M5.Lcd.setTextFont(1);
     M5.Lcd.setTextSize(1);
     for (byte row = 0; row < regMax/16; ++row) {
-/*
-      Wire.beginTransmission(addr);
-      Wire.write(row*16);
-      Wire.endTransmission();
-      Wire.requestFrom(addr, 16);
-//*/
       for (byte col = 0; col < 0x10; ++col) {
         int reg = col + row * 16;
-//*
-        Wire.beginTransmission(addr);
-        Wire.write(reg);
-        Wire.endTransmission();
-        Wire.requestFrom(addr, 1);
-//*/
         int x = 20 + col * 19;
         int y = 32 + row * 12;
-        uint8_t dat = Wire.read();
         bool focus { _focusReg == reg };
         uint16_t color = focus ? 0x083F : 0;
         M5.Lcd.setCursor(x, y);
-        M5.Lcd.setTextColor((dat ? 0xFFFF : 0xF9E7), color);
+
         if (reg == _focusReg || reg == focusRegOld) {
           M5.Lcd.drawRect(x-3, y-2, 17, 11, focus && _mode == eMode::BITEDIT ? 0xFFFF : color);
           M5.Lcd.fillRect(x-2, y-1, 15,  9, color);
         }
-        M5.Lcd.printf("%02X", dat);
+        Wire.beginTransmission(addr);
+        Wire.write(reg);
+        if (Wire.endTransmission(false) == 0
+         && Wire.requestFrom(addr, 1)) {
+          uint8_t dat = Wire.read();
+          M5.Lcd.setTextColor((dat ? 0xFFFF : 0xF9E7), color);
+          M5.Lcd.printf("%02X", dat);
+        } else {
+          M5.Lcd.setTextColor(0xF9E7, color);
+          M5.Lcd.print("--");
+        }
       }
     }
 
@@ -155,8 +152,8 @@ protected:
   {
     Wire.beginTransmission(addr);
     Wire.write(reg);
-    Wire.endTransmission();
-    if (Wire.requestFrom(addr, 1)) {
+    if (Wire.endTransmission(false) == 0
+    &&  Wire.requestFrom(addr, 1)) {
       return Wire.read();
     }
     return 0;
