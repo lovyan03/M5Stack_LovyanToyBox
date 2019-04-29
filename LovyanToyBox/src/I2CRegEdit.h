@@ -23,7 +23,7 @@ public:
   {
     M5.Lcd.setTextColor(0xFFFF);
     for (int i = 1; i < 16; ++i) {
-      M5.Lcd.drawFastHLine(0, i, TFT_HEIGHT, i << 1);
+      M5.Lcd.drawFastHLine(0, i, M5.Lcd.width(), i << 1);
     }
     M5.Lcd.drawString(getTitle(), 10, 0, 2);
 
@@ -90,7 +90,7 @@ public:
         Wire.beginTransmission(addr);
         Wire.write(reg);
         if (Wire.endTransmission(false) == 0
-         && Wire.requestFrom(addr, 1)) {
+         && Wire.requestFrom(addr, (uint8_t)1)) {
           uint8_t dat = Wire.read();
           M5.Lcd.setTextColor((dat ? 0xFFFF : 0xF9E7), color);
           M5.Lcd.printf("%02X", dat);
@@ -104,7 +104,7 @@ public:
     uint8_t value = getREG(_focusReg);
     for ( int i = 0; i < 8; ++i ) {
       M5.Lcd.setTextColor(0xFFFF, (_focusBit == i && _mode == eMode::BITEDIT) ? 0x083F : 0);
-      M5.Lcd.drawString(value & (1 << i) ? "1":"0", 150 - i * 10, 140, 2);
+      M5.Lcd.drawString(value & (1 << i) ? "1":"0", 150 - i * 10, 190, 2);
     }
 /*
     if (M5.BtnB.wasPressed()) { // Battery Charge on of toggle
@@ -116,7 +116,6 @@ public:
       toggleREG(0, 0x02);
     }
 */
-    delay(1);
 
     return true;
   }
@@ -153,7 +152,7 @@ protected:
     Wire.beginTransmission(addr);
     Wire.write(reg);
     if (Wire.endTransmission(false) == 0
-    &&  Wire.requestFrom(addr, 1)) {
+    &&  Wire.requestFrom(addr, (uint8_t)1)) {
       return Wire.read();
     }
     return 0;

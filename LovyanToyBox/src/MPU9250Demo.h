@@ -40,6 +40,9 @@ public:
 
   bool loop()
   {
+    M5.Lcd.setTextFont(1);
+    M5.Lcd.setTextSize(1);
+
     if (IMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01)
     {
       IMU.readAccelData(IMU.accelCount);
@@ -101,9 +104,8 @@ public:
 private:
   bool style0()
   {
-    M5.Lcd.drawLine(_x, 0, _x, TFT_WIDTH, 0);
+    M5.Lcd.drawLine(_x, 0, _x, M5.Lcd.height(), 0);
 
-    M5.Lcd.setTextSize(1);
     M5.Lcd.setCursor( 10, 5);
     M5.Lcd.setTextColor(0xffff,0);    M5.Lcd.print("accel (mg) ");
 
@@ -127,8 +129,8 @@ private:
     plotpoint(_x,120, IMU.gx / 10, IMU.gy / 10, IMU.gz / 10);
     plotpoint(_x,200, IMU.mx /300, IMU.my /300, IMU.mz /300);
 
-    _x = (1+_x) % TFT_HEIGHT;
-    M5.Lcd.drawLine(_x+1, 0, _x+1, TFT_WIDTH, 0xffff);
+    _x = (1+_x) % M5.Lcd.width();
+    M5.Lcd.drawLine(_x+1, 0, _x+1, M5.Lcd.height(), 0xffff);
 
     return true;
   }
@@ -155,7 +157,6 @@ private:
 
   bool style1()
   {
-    M5.Lcd.setTextSize(1);
     M5.Lcd.setCursor( 0,  0); M5.Lcd.setTextColor(0xffff,0);    M5.Lcd.print("accel (mg) ");
     M5.Lcd.setCursor(10, 10); M5.Lcd.setTextColor(0xf800,0);    M5.Lcd.printf("  x:%+6d", (int)(1000 * IMU.ax));
     M5.Lcd.setCursor(10, 30); M5.Lcd.setTextColor(0x07e0,0);    M5.Lcd.printf("  y:%+6d", (int)(1000 * IMU.ay));

@@ -2,14 +2,15 @@
 #define _SCROLLDEMO_H_
 
 #include <MenuCallBack.h>
-
+#include <vector>
 class ScrollDemo : public MenuCallBack
 {
+
   const uint16_t colorWay = 0x8410;
   const uint16_t hHeader = 16;
-  const uint16_t hFooter = 16;
-  const uint16_t hArea = TFT_WIDTH - hHeader - hFooter;
-  uint16_t way[TFT_WIDTH] = {0};
+  const uint16_t hFooter = 18;
+  const uint16_t hArea = M5.Lcd.height() - hHeader - hFooter;
+  std::vector<uint16_t> way;
   int f;
   float x,y;
   float angle;
@@ -32,6 +33,7 @@ public:
     wx = 100;
     tx = 100;
     ww = 120;
+    way.resize(hArea);
     for (int i = 0; i < hArea; ++i) {
       drawWay(hHeader+i);
       way[i] = wx;
@@ -47,6 +49,8 @@ public:
   bool loop()
   {
 delay(7);
+    M5.Lcd.setTextFont(0);
+    M5.Lcd.setTextFont(1);
     M5.Lcd.setTextColor(0xFFFF, 0);
     uint16_t xWay = way[((int)y + hArea - hHeader) % hArea];
     if ((uint16_t)x < xWay || (uint16_t)x > xWay+ww) {
@@ -85,7 +89,7 @@ delay(7);
     drawWay(hy);
     way[wy] = wx;
     if ( wx == tx ) {
-      tx = (millis() % (TFT_HEIGHT - ww -20)) + 10;
+      tx = (millis() % (M5.Lcd.width() - ww -20)) + 10;
     }
     wx += (tx < wx ? -1 : 1);
     return true;
@@ -116,8 +120,8 @@ delay(7);
     M5.Lcd.writecommand(ILI9341_VSCRDEF); // Vertical scroll definition
     M5.Lcd.writedata(tfa >> 8);           // Top Fixed Area line count
     M5.Lcd.writedata(tfa);
-    M5.Lcd.writedata((TFT_WIDTH-tfa-bfa)>>8);  // Vertical Scrolling Area line count
-    M5.Lcd.writedata(TFT_WIDTH-tfa-bfa);
+    M5.Lcd.writedata((M5.Lcd.height()-tfa-bfa)>>8);  // Vertical Scrolling Area line count
+    M5.Lcd.writedata(M5.Lcd.height()-tfa-bfa);
     M5.Lcd.writedata(bfa >> 8);           // Bottom Fixed Area line count
     M5.Lcd.writedata(bfa);
   }
