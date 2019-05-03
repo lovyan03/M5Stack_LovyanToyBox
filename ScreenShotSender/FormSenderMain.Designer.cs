@@ -89,7 +89,7 @@
             this.pnlTop1.Location = new System.Drawing.Point(0, 0);
             this.pnlTop1.Margin = new System.Windows.Forms.Padding(7, 6, 7, 6);
             this.pnlTop1.Name = "pnlTop1";
-            this.pnlTop1.Size = new System.Drawing.Size(780, 38);
+            this.pnlTop1.Size = new System.Drawing.Size(724, 38);
             this.pnlTop1.TabIndex = 2;
             // 
             // tbHost
@@ -108,7 +108,7 @@
             this.nudHeight.Location = new System.Drawing.Point(237, 0);
             this.nudHeight.Margin = new System.Windows.Forms.Padding(2, 4, 2, 4);
             this.nudHeight.Maximum = new decimal(new int[] {
-            240,
+            120,
             0,
             0,
             0});
@@ -121,7 +121,7 @@
             this.nudHeight.Size = new System.Drawing.Size(93, 31);
             this.nudHeight.TabIndex = 4;
             this.nudHeight.Value = new decimal(new int[] {
-            160,
+            120,
             0,
             0,
             0});
@@ -132,7 +132,7 @@
             this.nudWidth.Location = new System.Drawing.Point(72, 0);
             this.nudWidth.Margin = new System.Windows.Forms.Padding(2, 4, 2, 4);
             this.nudWidth.Maximum = new decimal(new int[] {
-            320,
+            160,
             0,
             0,
             0});
@@ -145,7 +145,7 @@
             this.nudWidth.Size = new System.Drawing.Size(93, 31);
             this.nudWidth.TabIndex = 3;
             this.nudWidth.Value = new decimal(new int[] {
-            240,
+            160,
             0,
             0,
             0});
@@ -157,14 +157,14 @@
             this.pbPreview.Location = new System.Drawing.Point(0, 0);
             this.pbPreview.Margin = new System.Windows.Forms.Padding(7, 6, 7, 6);
             this.pbPreview.Name = "pbPreview";
-            this.pbPreview.Size = new System.Drawing.Size(780, 484);
+            this.pbPreview.Size = new System.Drawing.Size(724, 484);
             this.pbPreview.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom;
             this.pbPreview.TabIndex = 3;
             this.pbPreview.TabStop = false;
             // 
             // timer1
             // 
-            this.timer1.Interval = 16;
+            this.timer1.Interval = 1;
             this.timer1.Tick += new System.EventHandler(this.timer1_Tick);
             // 
             // pnlAll
@@ -174,7 +174,7 @@
             this.pnlAll.Location = new System.Drawing.Point(0, 72);
             this.pnlAll.Margin = new System.Windows.Forms.Padding(7, 6, 7, 6);
             this.pnlAll.Name = "pnlAll";
-            this.pnlAll.Size = new System.Drawing.Size(780, 484);
+            this.pnlAll.Size = new System.Drawing.Size(724, 484);
             this.pnlAll.TabIndex = 4;
             // 
             // pnlTop2
@@ -192,7 +192,7 @@
             this.pnlTop2.Location = new System.Drawing.Point(0, 38);
             this.pnlTop2.Margin = new System.Windows.Forms.Padding(7, 6, 7, 6);
             this.pnlTop2.Name = "pnlTop2";
-            this.pnlTop2.Size = new System.Drawing.Size(780, 34);
+            this.pnlTop2.Size = new System.Drawing.Size(724, 34);
             this.pnlTop2.TabIndex = 5;
             // 
             // label1
@@ -258,7 +258,7 @@
             this.nudDivide.Size = new System.Drawing.Size(93, 31);
             this.nudDivide.TabIndex = 7;
             this.nudDivide.Value = new decimal(new int[] {
-            4,
+            5,
             0,
             0,
             0});
@@ -303,7 +303,7 @@
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(13F, 24F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(780, 556);
+            this.ClientSize = new System.Drawing.Size(724, 556);
             this.Controls.Add(this.pnlAll);
             this.Controls.Add(this.pnlTop2);
             this.Controls.Add(this.pnlTop1);

@@ -59,7 +59,7 @@ namespace ScreenShotSender
             {
                 _gResizeBmp?.Dispose();
                 _resizeBmp?.Dispose();
-                _resizeBmp = new Bitmap((int)nudWidth.Value, (int)nudHeight.Value, System.Drawing.Imaging.PixelFormat.Format16bppRgb565);
+                _resizeBmp = new Bitmap((int)nudWidth.Value, (int)nudHeight.Value, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
                 _gResizeBmp = Graphics.FromImage(_resizeBmp);
                 _gResizeBmp.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighSpeed;  // AntiAlias; //  HighQuality;
             }
@@ -101,22 +101,36 @@ namespace ScreenShotSender
         
         private void udpJPGSend()
         {
+            EncoderParameters encParams = new EncoderParameters(1);
             int restHeight = _resizeBmp.Height;
+            int divide = Math.Max(1, (int)nudDivide.Value);
             byte y = 0;
             int count = 0;
-            int hei = Math.Max(8,(_resizeBmp.Height / (int)nudDivide.Value)) & 0xfff8;
+            int hei = Math.Max(4,((_resizeBmp.Height+3) / divide)) & 0xFFFC;
 
             long msec = _sw.ElapsedMilliseconds;
             do
             {
-                _jpgQuality = Math.Min(100, _jpgQuality + 5);
+                if (++count == divide) {
+                    hei = restHeight;
+                } else {
+                    hei = Math.Min(restHeight, Math.Max(8, (restHeight / (divide + 1 - count)) & 0xFFF8));
+                }
+                _jpgQuality = Math.Min(100, _jpgQuality + 2);
 
-                hei = Math.Min(hei, restHeight);
                 if (_jpgBuf == null || _jpgBuf.Width != _resizeBmp.Width || _jpgBuf.Height != hei)
                 {
+                    if (_jpgBuf != null && _jpgBuf.Height != hei)
+                    {
+                        if (_jpgBuf.Height < hei) {
+                            _jpgQuality = Math.Max(0, _jpgQuality - 5);
+                        } else {
+                            _jpgQuality = Math.Min(100, _jpgQuality + 5);
+                        }
+                    }
                     _gJpgBuf?.Dispose();
                     _jpgBuf?.Dispose();
-                    _jpgBuf = new Bitmap(_resizeBmp.Width, hei, PixelFormat.Format16bppRgb565);
+                    _jpgBuf = new Bitmap(_resizeBmp.Width, hei, PixelFormat.Format24bppRgb);
                     _gJpgBuf = Graphics.FromImage(_jpgBuf);
                 }
                 _gJpgBuf.DrawImage(_resizeBmp, 0, -y, _resizeBmp.Width, _resizeBmp.Height);
@@ -125,22 +139,23 @@ namespace ScreenShotSender
                 {
                     using (MemoryStream ms = new MemoryStream())
                     {
-                        EncoderParameters encParams = new EncoderParameters(1);
-                        encParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, _jpgQuality);
                         ms.WriteByte(y);
-                        ms.WriteByte((byte) _jpgBuf.Height);
-                        ms.WriteByte((byte)(_jpgBuf.Width & 0xff));
-                        ms.WriteByte((byte)(_jpgBuf.Width >> 8));
+                        ms.WriteByte((byte)_resizeBmp.Height);
+                        ms.WriteByte((byte)(_resizeBmp.Width & 0xff));
+                        ms.WriteByte((byte)(_resizeBmp.Width >> 8));
+                        encParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, _jpgQuality);
                         _jpgBuf.Save(ms, _jpgEncoder, encParams);
                         rgbValues = ms.GetBuffer();
                     }
                     if (rgbValues.Length <= 1460) break;
                     if (_jpgQuality <= 0) break;
-                    _jpgQuality = Math.Max(0, _jpgQuality - 5);
+                    _jpgQuality = Math.Max(0, _jpgQuality - 2 - ((rgbValues.Length - 1460)>>4));
                 }
-                count++;
-                while (_sw.IsRunning && msec + count * nudDelay.Value > _sw.ElapsedMilliseconds) { System.Threading.Thread.Sleep(0); }
-                _udp.send(rgbValues);
+                if (rgbValues.Length <= 1460)
+                {
+                    while (_sw.IsRunning && msec + count * nudDelay.Value > _sw.ElapsedMilliseconds) { System.Threading.Thread.Sleep(0); }
+                    _udp.send(rgbValues);
+                }
                 y += (byte)_jpgBuf.Height;
                 restHeight -= _jpgBuf.Height;
             } while (restHeight > 0);

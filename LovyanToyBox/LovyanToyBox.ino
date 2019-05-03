@@ -83,7 +83,9 @@ typedef std::vector<MenuItem*> vmi;
 
 void setup() {
   M5.begin();
-#ifndef ARDUINO_ODROID_ESP32
+#ifdef ARDUINO_ODROID_ESP32
+  M5.battery.begin();
+#else
   M5.Speaker.begin();
   M5.Speaker.mute();
   Wire.begin();
@@ -121,7 +123,8 @@ void setup() {
   p.end();
 
   treeView.setItems(vmi
-               { new MenuItem("ScreenShotReceiver", callBackExec<UDPReceiver>)
+               { new MenuItem("ScreenShotReceiver"    , 0, callBackExec<UDPReceiver>)
+               , new MenuItem("ScreenShotReceiver(AP)", 1, callBackExec<UDPReceiver>)
                , new MenuItem("ScrollDemo"   , callBackExec<ScrollDemo>)
                , new MenuItem("MPU9250Demo"  , callBackExec<MPU9250Demo>)
                , new MenuItem("ADInputDemo"  , callBackExec<ADInputDemo>)
