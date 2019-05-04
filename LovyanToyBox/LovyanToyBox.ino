@@ -150,11 +150,13 @@ void loop() {
   }
   if (0 == (++loopcnt & 0xF)) {
     Header.draw();
+#ifndef ARDUINO_ODROID_ESP32
     if ( 600000 < millis() - lastctrl ) {
       Serial.println( "goto sleep" );
       M5.Lcd.setBrightness(0);
       M5.Lcd.sleep();
       esp_deep_sleep_start();
     }
+#endif
   }
 }

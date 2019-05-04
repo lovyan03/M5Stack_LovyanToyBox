@@ -279,7 +279,9 @@ private:
       assert(ret == ESP_OK);
       _sent[i] = true;
     }
+    _lastX = x;
     _lastY = y;
+    _lastW = w;
     _lastH = h;
   }
 
@@ -428,7 +430,6 @@ private:
 spi_device_handle_t UDPReceiver::_spi = NULL;
 uint16_t UDPReceiver::_pixBuf[2][DMA_BUF_LEN];
 bool UDPReceiver::_sent[6];
-int UDPReceiver::_lastX, UDPReceiver::_lastW;
-int UDPReceiver::_lastY, UDPReceiver::_lastH;
+int UDPReceiver::_lastX, UDPReceiver::_lastY, UDPReceiver::_lastW, UDPReceiver::_lastH;
 
 #endif
