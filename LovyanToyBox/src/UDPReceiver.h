@@ -100,14 +100,14 @@ public:
     delay(10);
   }
 
+  uint8_t drawQueue = 0;
   bool loop()
   {
 //*
-    for (int i = 0; i < UDP_QUEUE_COUNT; ++i) {
-      if (_flgQueue[i]) {
-        udpJpg(_udpQueue[i]);
-        _flgQueue[i] = false;
-      }
+    while (_flgQueue[drawQueue]) {
+      udpJpg(_udpQueue[drawQueue]);
+      _flgQueue[drawQueue] = false;
+      drawQueue = (1 + drawQueue) % UDP_QUEUE_COUNT;
     }
 /*
     while (!_udpQueue.empty()) {
@@ -136,7 +136,7 @@ private:
   enum
   { UDP_BUF_LEN = 1460
   , DMA_BUF_LEN = 10240
-  , UDP_QUEUE_COUNT = 3
+  , UDP_QUEUE_COUNT = 4
   };
   WiFiUDP _udp;
   uint16_t _count;
@@ -170,7 +170,7 @@ private:
           me->_udpQueue[idx].resize(me->_udp.read(&me->_udpQueue[idx][0], UDP_BUF_LEN));
           if (!me->_udpQueue[idx].empty()) {
             me->_flgQueue[idx] = true;
-            idx = (1+idx) % UDP_QUEUE_COUNT;
+            idx = (1 + idx) % UDP_QUEUE_COUNT;
           }
         }
       }

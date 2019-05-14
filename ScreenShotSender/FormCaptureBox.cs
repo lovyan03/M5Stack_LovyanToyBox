@@ -103,5 +103,25 @@ namespace ScreenShotSender
                             );
             return _bmp;
         }
+
+        private void FormCaptureBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            var newpoint = Location;
+            switch (e.KeyCode) {
+                case Keys.Up:
+                    newpoint.Y -= e.Control ? 8 : 1;
+                    break;
+                case Keys.Down:
+                    newpoint.Y += e.Control ? 8 : 1;
+                    break;
+                case Keys.Left:
+                    newpoint.X -= e.Control ? 8 : 1;
+                    break;
+                case Keys.Right:
+                    newpoint.X += e.Control ? 8 : 1;
+                    break;
+            }
+            Location = newpoint;
+        }
     }
 }

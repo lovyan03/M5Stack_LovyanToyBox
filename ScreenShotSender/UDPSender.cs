@@ -19,6 +19,7 @@ namespace ProptotypeControler //namespaceは本体に合わせて要修正
         {
             try
             {
+                udpForSend?.Dispose();
                 udpForSend = new UdpClient(port_snd); //送信用ポート
                 remotePort = port_to; //送信先ポート
                 var socket = new System.Net.Sockets.Socket(SocketType.Dgram,ProtocolType.Udp);

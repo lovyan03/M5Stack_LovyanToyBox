@@ -26,7 +26,6 @@ namespace ScreenShotSender
             updateBmp();
             _sw = new System.Diagnostics.Stopwatch();
             _udp = new ProptotypeControler.UDPSender();
-            _udp.init(_udpPort-1, _udpPort);
 
             foreach (ImageCodecInfo ici in ImageCodecInfo.GetImageEncoders()) {
                 if (ici.FormatID == ImageFormat.Jpeg.Guid) {
@@ -74,6 +73,9 @@ namespace ScreenShotSender
 
         void start()
         {
+            var rnd = new Random();
+            
+            _udp.init((rnd.Next() & 0x7FFF) | 0x8000, _udpPort);
             _udp.RemoteHost = tbHost.Text;
             _sw.Start();
             btnStartStopr.Text = "Stop";

@@ -66,6 +66,7 @@
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(614, 409);
             this.Controls.Add(this.panel1);
+            this.KeyPreview = true;
             this.Margin = new System.Windows.Forms.Padding(7, 6, 7, 6);
             this.MinimumSize = new System.Drawing.Size(26, 71);
             this.Name = "FormCaptureBox";
@@ -73,6 +74,7 @@
             this.Text = "FormCaptureBox";
             this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.FormCaptureBox_FormClosing);
             this.Load += new System.EventHandler(this.FormCaptureBox_Load);
+            this.KeyDown += new System.Windows.Forms.KeyEventHandler(this.FormCaptureBox_KeyDown);
             this.MouseDown += new System.Windows.Forms.MouseEventHandler(this.Form_MouseDown);
             this.MouseMove += new System.Windows.Forms.MouseEventHandler(this.Form_MouseMove);
             this.Resize += new System.EventHandler(this.FormCaptureBox_Resize);
