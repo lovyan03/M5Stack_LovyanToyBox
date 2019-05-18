@@ -46,46 +46,45 @@ class UDPReceiver
 public:
   UDPReceiver() {}
 
+  M5TreeView::eCmd cmd;
   virtual void operator()(MenuItem* mi) {
     M5TreeView* treeView = ((M5TreeView*)(mi->topItem()));
+    _softap = mi->tag != 0;
     M5.Lcd.fillScreen(0);
-
     M5.Lcd.setTextColor(0xFFFF, 0);
     M5.Lcd.drawString("WiFiwaiting", 0, 0);
-    if (mi->tag == 0) {
-      WiFi.mode(WIFI_MODE_STA);
-      WiFi.begin();
-      while( WiFi.status() != WL_CONNECTED) {
-        delay(500);
-      }
-      M5.Lcd.drawString(WiFi.localIP().toString(), 0, 0);
-      _udp.begin(WiFi.localIP(), 63333);
-    } else {
-      WiFi.mode(WIFI_MODE_AP);
-      WiFi.begin();
-      M5.Lcd.drawString(WiFi.softAPIP().toString(), 0, 0);
-      _udp.begin(WiFi.softAPIP(), 63333);
-    }
 
     if (setup()) {
-      while (treeView->checkInput() != M5TreeView::eCmd::BACK && loop());
+      do {
+        cmd = treeView->checkInput();
+      } while (cmd != M5TreeView::eCmd::BACK && loop());
       close();
     }
     M5.Lcd.fillScreen(MenuItem::backgroundColor);
   }
   bool setup()
   {
-    for (int i = 0; i < 6; ++i) { _sent[i] = false; }
-    if (_spi == NULL)  _spi = spi_start();
-//*
-    for (int i = 0; i < UDP_QUEUE_COUNT; ++i) {
-      _flgQueue[i] = false;
+    udpStart();
+    if (!_softap) {
+      M5.Lcd.drawString(WiFi.localIP().toString(), 0, 0);
+    } else {
+      M5.Lcd.drawString(WiFi.softAPIP().toString(), 0, 0);
     }
-    _isRunning = true;
+
     _lastX = -1;
     _lastY = -1;
     _lastW = -1;
     _lastH = -1;
+
+    _isRunning = true;
+
+    for (int i = 0; i < UDP_QUEUE_COUNT; ++i) {
+      _flgQueue[i] = false;
+    }
+
+    for (int i = 0; i < 6; ++i) { _sent[i] = false; }
+    if (_spi == NULL)  _spi = spi_start();
+//*
 
     //disableCore0WDT();
     //disableCore1WDT();
@@ -95,6 +94,7 @@ public:
   }
   void close()
   {
+    _udp.stop();
     _isRunning = false;
     send_framebuffer_finish(_spi);
     delay(10);
@@ -103,7 +103,11 @@ public:
   uint8_t drawQueue = 0;
   bool loop()
   {
-//*
+    if (cmd == M5TreeView::eCmd::ENTER) {
+      _udp.stop();
+      udpStart();
+    }
+
     while (_flgQueue[drawQueue]) {
       udpJpg(_udpQueue[drawQueue]);
       _flgQueue[drawQueue] = false;
@@ -146,6 +150,7 @@ private:
   volatile bool _flgQueue[UDP_QUEUE_COUNT];
   std::vector<uint8_t> _udpQueue[UDP_QUEUE_COUNT];
   uint8_t _idxQueue = 0;
+  bool _softap = false;
 
   static bool _sent[6];
   static uint16_t _pixBuf[2][DMA_BUF_LEN];
@@ -192,7 +197,29 @@ private:
     gpio_set_level((gpio_num_t)TFT_DC_PIN, dc);
   }
 
-  spi_device_handle_t spi_start()
+  void udpStart(void) {
+    if (!_softap) {
+      WiFi.mode(WIFI_MODE_STA);
+      for (int i = 0; i < 10; ++i) {
+        WiFi.disconnect(true);
+        delay(100);
+        WiFi.begin();
+        for (int j = 0; j < 100; ++j) {
+          if (WiFi.status() != WL_CONNECTED) {
+            delay(50);
+          }
+        }
+        if (WiFi.status() == WL_CONNECTED) break;
+      }
+      _udp.begin(WiFi.localIP(), 63333);
+    } else {
+      WiFi.mode(WIFI_MODE_AP);
+      WiFi.begin();
+      _udp.begin(WiFi.softAPIP(), 63333);
+    }
+  }
+
+  spi_device_handle_t spi_start(void)
   {
     esp_err_t ret;
     spi_device_handle_t hSpi;
