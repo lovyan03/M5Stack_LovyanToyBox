@@ -106,6 +106,7 @@ namespace ScreenShotSender
             EncoderParameters encParams = new EncoderParameters(1);
             int restHeight = _resizeBmp.Height;
             int divide = Math.Max(1, (int)nudDivide.Value);
+            int pakcetSize = (int)nudPacketSize.Value;
             byte y = 0;
             int count = 0;
             int hei = Math.Max(4,((_resizeBmp.Height+3) / divide)) & 0xFFFC;
@@ -149,11 +150,11 @@ namespace ScreenShotSender
                         _jpgBuf.Save(ms, _jpgEncoder, encParams);
                         rgbValues = ms.GetBuffer();
                     }
-                    if (rgbValues.Length <= 1460) break;
+                    if (rgbValues.Length <= pakcetSize) break;
                     if (_jpgQuality <= 0) break;
-                    _jpgQuality = Math.Max(0, _jpgQuality - 2 - ((rgbValues.Length - 1460)>>4));
+                    _jpgQuality = Math.Max(0, _jpgQuality - 2 - ((rgbValues.Length - pakcetSize) >>4));
                 }
-                if (rgbValues.Length <= 1460)
+                if (rgbValues.Length <= pakcetSize)
                 {
                     while (_sw.IsRunning && msec + count * nudDelay.Value > _sw.ElapsedMilliseconds) { System.Threading.Thread.Sleep(0); }
                     _udp.send(rgbValues);

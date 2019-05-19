@@ -46,6 +46,8 @@
             this.lblDivide = new System.Windows.Forms.Label();
             this.lblHeight = new System.Windows.Forms.Label();
             this.lblWidth = new System.Windows.Forms.Label();
+            this.lblPakcetSize = new System.Windows.Forms.Label();
+            this.nudPacketSize = new System.Windows.Forms.NumericUpDown();
             this.pnlTop1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.nudHeight)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.nudWidth)).BeginInit();
@@ -54,6 +56,7 @@
             this.pnlTop2.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.nudDelay)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.nudDivide)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.nudPacketSize)).BeginInit();
             this.SuspendLayout();
             // 
             // btnShowFrame
@@ -62,7 +65,7 @@
             this.btnShowFrame.Location = new System.Drawing.Point(0, 0);
             this.btnShowFrame.Margin = new System.Windows.Forms.Padding(7, 6, 7, 6);
             this.btnShowFrame.Name = "btnShowFrame";
-            this.btnShowFrame.Size = new System.Drawing.Size(128, 38);
+            this.btnShowFrame.Size = new System.Drawing.Size(132, 38);
             this.btnShowFrame.TabIndex = 0;
             this.btnShowFrame.Text = "ShowBox";
             this.btnShowFrame.UseVisualStyleBackColor = true;
@@ -71,10 +74,10 @@
             // btnStartStopr
             // 
             this.btnStartStopr.Dock = System.Windows.Forms.DockStyle.Left;
-            this.btnStartStopr.Location = new System.Drawing.Point(128, 0);
+            this.btnStartStopr.Location = new System.Drawing.Point(132, 0);
             this.btnStartStopr.Margin = new System.Windows.Forms.Padding(7, 6, 7, 6);
             this.btnStartStopr.Name = "btnStartStopr";
-            this.btnStartStopr.Size = new System.Drawing.Size(128, 38);
+            this.btnStartStopr.Size = new System.Drawing.Size(132, 38);
             this.btnStartStopr.TabIndex = 1;
             this.btnStartStopr.Text = "Start";
             this.btnStartStopr.UseVisualStyleBackColor = true;
@@ -82,6 +85,8 @@
             // 
             // pnlTop1
             // 
+            this.pnlTop1.Controls.Add(this.nudPacketSize);
+            this.pnlTop1.Controls.Add(this.lblPakcetSize);
             this.pnlTop1.Controls.Add(this.tbHost);
             this.pnlTop1.Controls.Add(this.btnStartStopr);
             this.pnlTop1.Controls.Add(this.btnShowFrame);
@@ -95,7 +100,7 @@
             // tbHost
             // 
             this.tbHost.Dock = System.Windows.Forms.DockStyle.Left;
-            this.tbHost.Location = new System.Drawing.Point(256, 0);
+            this.tbHost.Location = new System.Drawing.Point(264, 0);
             this.tbHost.Margin = new System.Windows.Forms.Padding(2, 4, 2, 4);
             this.tbHost.Name = "tbHost";
             this.tbHost.Size = new System.Drawing.Size(162, 31);
@@ -299,6 +304,42 @@
             this.lblWidth.Text = "width";
             this.lblWidth.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
             // 
+            // lblPakcetSize
+            // 
+            this.lblPakcetSize.Dock = System.Windows.Forms.DockStyle.Left;
+            this.lblPakcetSize.Location = new System.Drawing.Point(426, 0);
+            this.lblPakcetSize.Margin = new System.Windows.Forms.Padding(7, 0, 7, 0);
+            this.lblPakcetSize.MinimumSize = new System.Drawing.Size(0, 38);
+            this.lblPakcetSize.Name = "lblPakcetSize";
+            this.lblPakcetSize.Size = new System.Drawing.Size(128, 38);
+            this.lblPakcetSize.TabIndex = 11;
+            this.lblPakcetSize.Text = "PakcetSize";
+            this.lblPakcetSize.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
+            // 
+            // nudPacketSize
+            // 
+            this.nudPacketSize.Dock = System.Windows.Forms.DockStyle.Left;
+            this.nudPacketSize.Location = new System.Drawing.Point(554, 0);
+            this.nudPacketSize.Margin = new System.Windows.Forms.Padding(2, 4, 2, 4);
+            this.nudPacketSize.Maximum = new decimal(new int[] {
+            1460,
+            0,
+            0,
+            0});
+            this.nudPacketSize.Minimum = new decimal(new int[] {
+            1000,
+            0,
+            0,
+            0});
+            this.nudPacketSize.Name = "nudPacketSize";
+            this.nudPacketSize.Size = new System.Drawing.Size(93, 31);
+            this.nudPacketSize.TabIndex = 12;
+            this.nudPacketSize.Value = new decimal(new int[] {
+            1460,
+            0,
+            0,
+            0});
+            // 
             // FormSenderMain
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(13F, 24F);
@@ -320,6 +361,7 @@
             this.pnlTop2.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.nudDelay)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.nudDivide)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.nudPacketSize)).EndInit();
             this.ResumeLayout(false);
 
         }
@@ -343,6 +385,8 @@
         private System.Windows.Forms.Label lblDelay;
         private System.Windows.Forms.NumericUpDown nudDivide;
         private System.Windows.Forms.Label lblDivide;
+        private System.Windows.Forms.NumericUpDown nudPacketSize;
+        private System.Windows.Forms.Label lblPakcetSize;
     }
 }
 

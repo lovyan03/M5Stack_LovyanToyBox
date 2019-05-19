@@ -8,21 +8,10 @@
 #include <WiFiUdp.h>
 #include <rom/tjpgd.h>
 #include <driver/spi_master.h>
-/*
-#define jpgColor(c)                                \
-  (((uint16_t)(((uint8_t *)(c))[0] & 0xF8) << 8) | \
-   ((uint16_t)(((uint8_t *)(c))[1] & 0xFC) << 3) | \
-   ((((uint8_t *)(c))[2] & 0xF8) >> 3))
-
-static uint16_t jpgColor(uint8_t r, uint8_t g, uint8_t b) {
-  return (r & 0xF8) | (b & 0xF8) << 5 | (g & 0xE0) >> 5 | (g & 0x1C) << 11;
-}
-*/
+#include <esp_heap_alloc_caps.h>
 
 #define jpgColor(r, g, b) \
     (uint16_t)(((r) & 0xF8) | ((b) & 0xF8) << 5 | ((g) & 0xE0) >> 5 | ((g) & 0x1C) << 11)
-
-
 
 typedef struct {
   uint16_t x;
@@ -64,6 +53,8 @@ public:
   }
   bool setup()
   {
+    for (int i = 0; i < 2; ++i) 
+      _pixBuf[i] = (uint16_t*)pvPortMallocCaps(DMA_BUF_LEN * sizeof(uint16_t), MALLOC_CAP_DMA);
     udpStart();
     if (!_softap) {
       M5.Lcd.drawString(WiFi.localIP().toString(), 0, 0);
@@ -103,7 +94,7 @@ public:
   uint8_t drawQueue = 0;
   bool loop()
   {
-    if (cmd == M5TreeView::eCmd::ENTER) {
+    if (cmd == M5TreeView::eCmd::ENTER || _wifi_stage == 2) {
       _udp.stop();
       udpStart();
     }
@@ -139,12 +130,14 @@ public:
 private:
   enum
   { UDP_BUF_LEN = 1460
+  , UDP_PORT = 63333
   , DMA_BUF_LEN = 10240
   , UDP_QUEUE_COUNT = 4
   };
   WiFiUDP _udp;
   uint16_t _count;
   uint32_t _sec;
+  uint8_t _wifi_stage;
 //*
   volatile bool _isRunning;
   volatile bool _flgQueue[UDP_QUEUE_COUNT];
@@ -153,7 +146,7 @@ private:
   bool _softap = false;
 
   static bool _sent[6];
-  static uint16_t _pixBuf[2][DMA_BUF_LEN];
+  static uint16_t* _pixBuf[2];
   static spi_device_handle_t _spi;
   static int _lastX, _lastY, _lastW, _lastH;
 
@@ -182,6 +175,11 @@ private:
       if (sec != millis() / 1000) {
         Serial.printf("draw %d packet/s : drop %d packet/s\r\n", count, drop);
         sec = millis() / 1000;
+        if (count == 0 && drop == 0) {
+          if (me->_wifi_stage == 1) me->_wifi_stage = 2;
+        } else {
+          me->_wifi_stage = 1;
+        }
         count = 0;
         drop = 0;
       }
@@ -189,7 +187,7 @@ private:
     }
     vTaskDelete(NULL);
   } 
-  
+
 //*/
   static void lcd_spi_pre_transfer_callback(spi_transaction_t *t)
   {
@@ -198,6 +196,8 @@ private:
   }
 
   void udpStart(void) {
+    _wifi_stage = 0;
+    Serial.println("wifi init");
     if (!_softap) {
       WiFi.mode(WIFI_MODE_STA);
       for (int i = 0; i < 10; ++i) {
@@ -211,11 +211,14 @@ private:
         }
         if (WiFi.status() == WL_CONNECTED) break;
       }
-      _udp.begin(WiFi.localIP(), 63333);
+      _udp.begin(WiFi.localIP(), UDP_PORT);
+      Serial.println(WiFi.localIP());
     } else {
+      WiFi.disconnect(true);
       WiFi.mode(WIFI_MODE_AP);
       WiFi.begin();
-      _udp.begin(WiFi.softAPIP(), 63333);
+      _udp.begin(WiFi.softAPIP(), UDP_PORT);
+      Serial.println(WiFi.softAPIP());
     }
   }
 
@@ -379,9 +382,9 @@ private:
         g = data[1];
         b = data[2];
         p[pixIndex- jpeg->maxWidth * 2] = jpgColor( r                     ,  g                     ,  b                     );
-        p[pixIndex++]     = jpgColor((r < 251) ? r + 4 : 255, (g < 253) ? g + 2 : 255, (b < 251) ? b + 4 : 255);
+        p[pixIndex++]                   = jpgColor((r < 251) ? r + 4 : 255, (g < 253) ? g + 2 : 255, (b < 251) ? b + 4 : 255);
         p[pixIndex- jpeg->maxWidth * 2] = jpgColor((r < 249) ? r + 6 : 255, (g < 252) ? g + 3 : 255, (b < 249) ? b + 6 : 255);
-        p[pixIndex++]     = jpgColor((r < 253) ? r + 2 : 255, (g < 254) ? g + 1 : 255, (b < 253) ? b + 2 : 255);
+        p[pixIndex++]                   = jpgColor((r < 253) ? r + 2 : 255, (g < 254) ? g + 1 : 255, (b < 253) ? b + 2 : 255);
         data += 3;
       }
       data += 3 * oR;
@@ -455,7 +458,7 @@ private:
   }
 };
 spi_device_handle_t UDPReceiver::_spi = NULL;
-uint16_t UDPReceiver::_pixBuf[2][DMA_BUF_LEN];
+uint16_t* UDPReceiver::_pixBuf[2];
 bool UDPReceiver::_sent[6];
 int UDPReceiver::_lastX, UDPReceiver::_lastY, UDPReceiver::_lastW, UDPReceiver::_lastH;
 
