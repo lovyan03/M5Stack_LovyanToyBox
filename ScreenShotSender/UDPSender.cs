@@ -1,27 +1,25 @@
-using System.Net;//for UDP
-using System.Net.Sockets; //for UDP
-using System.Threading;//for Interlocked
+using System.Net.Sockets;
 
-namespace ProptotypeControler //namespaceは本体に合わせて要修正
+namespace ScreenShotSender
 {
     public class UDPSender
     {
-        private UdpClient udpForSend; //送信用クライアント
-        private int remotePort;//送信先のポート
-
-        public string RemoteHost { get; set; } = "localhost"; //送信先のIPアドレス
+        private UdpClient _udpForSend; // 送信用クライアント
+        private string _addr;          // 送信先アドレス
+        private int _port;             // 送信先のポート
 
         public UDPSender()
         {
         }
 
-        public bool init(int port_snd, int port_to) //UDP設定（送受信用ポートを開きつつ受信用スレッドを生成）
+        public bool start(string addr, int port)
         {
             try
             {
-                udpForSend?.Dispose();
-                udpForSend = new UdpClient(port_snd); //送信用ポート
-                remotePort = port_to; //送信先ポート
+                _udpForSend?.Dispose();
+                _udpForSend = new UdpClient(0); // 送信元ポート0(未使用ポートが割当てられる)
+                _addr = addr;
+                _port = port;
                 var socket = new System.Net.Sockets.Socket(SocketType.Dgram,ProtocolType.Udp);
                 socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.SendBuffer, 1024*1024);
                 return true;
@@ -36,16 +34,16 @@ namespace ProptotypeControler //namespaceは本体に合わせて要修正
         {
             try
             {
-                udpForSend.SendAsync(sendBytes, sendBytes.Length, RemoteHost, remotePort);
+                _udpForSend.SendAsync(sendBytes, sendBytes.Length, _addr, _port);
             }
             catch { }
         }
 
-        public void end() //送受信用ポートを閉じつつ受信用スレッドも廃止
+        public void stop()
         {
             try
             {
-                udpForSend.Close();
+                _udpForSend.Close();
             }
             catch { }
         }

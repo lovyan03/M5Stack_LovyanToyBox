@@ -1,11 +1,11 @@
-#ifndef _UDPRECIEVER_H_
-#define _UDPRECIEVER_H_
+#ifndef _TCPRECEIVER_H_
+#define _TCPRECEIVER_H_
 
 #include <vector>
 #include <M5Stack.h>
 #include <M5TreeView.h>
 #include <WiFi.h>
-#include <WiFiUdp.h>
+#include <WiFiServer.h>
 #include <rom/tjpgd.h>
 #include <driver/spi_master.h>
 #include <esp_heap_alloc_caps.h>
@@ -14,27 +14,10 @@
 #define jpgColor(r, g, b) \
     (uint16_t)(((r) & 0xF8) | ((b) & 0xF8) << 5 | ((g) & 0xE0) >> 5 | ((g) & 0x1C) << 11)
 
-typedef struct {
-  uint16_t x;
-  uint16_t y;
-  uint16_t maxWidth;
-  uint16_t maxHeight;
-  uint16_t offX;
-  uint16_t offY;
-  jpeg_div_t scale;
-  const void *src;
-  size_t len;
-  size_t index;
-  M5Display *tft;
-  uint16_t outWidth;
-  uint16_t outHeight;
-} jpg_file_decoder_t;
-
-
-class UDPReceiver
+class TCPReceiver
 {
 public:
-  UDPReceiver() {}
+  TCPReceiver() {}
 
   M5TreeView::eCmd cmd;
   virtual void operator()(MenuItem* mi) {
@@ -54,9 +37,12 @@ public:
   }
   bool setup()
   {
+    Serial.println("setup");
     for (int i = 0; i < 2; ++i) 
       _pixBuf[i] = (uint16_t*)pvPortMallocCaps(DMA_BUF_LEN * sizeof(uint16_t), MALLOC_CAP_DMA);
-    udpStart();
+
+    tcpStart();
+
     if (!_softap) {
       M5.Lcd.drawString(WiFi.localIP().toString(), 0, 0);
     } else {
@@ -64,78 +50,90 @@ public:
     }
 
     _isRunning = true;
-
     for (int i = 0; i < QUEUE_COUNT; ++i) {
       _flgQueue[i] = false;
     }
-
     Dma.setup();
 
-    //disableCore0WDT();
-    //disableCore1WDT();
+    disableCore0WDT();
+    disableCore1WDT();
     xTaskCreatePinnedToCore(taskReceive, "taskReceive", 4096, this, 1, NULL, 0);
 //*/
     return true;
   }
   void close()
   {
-    _udp.stop();
     _isRunning = false;
+    _tcp.stop();
     Dma.close();
     delay(10);
+    for (int i = 0; i < QUEUE_COUNT; ++i) {
+      _flgQueue[i] = false;
+      _tcpQueue[i].clear();
+    }
   }
 
+  std::vector<uint8_t> _tcpbuf;
   uint8_t drawQueue = 0;
   bool loop()
   {
-    if (cmd == M5TreeView::eCmd::ENTER || _wifi_stage == 2) {
-      _udp.stop();
-      udpStart();
+    if (cmd == M5TreeView::eCmd::ENTER) {
+      _wifi_stage = 2;
     }
-
-    while (_flgQueue[drawQueue]) {
-      udpJpg(_udpQueue[drawQueue]);
+//*
+    if (_flgQueue[drawQueue]) {
+      tcpJpg(_tcpQueue[drawQueue]);
       _flgQueue[drawQueue] = false;
       drawQueue = (1 + drawQueue) % QUEUE_COUNT;
     }
-/*
-    while (!_udpQueue.empty()) {
-      if (M5.BtnC.isReleased()) udpJpg(_udpQueue.front());
-      _udpQueue.pop();
-    }
-//
-    if (_udp.parsePacket()) {
-      _udpbuf.resize(UDP_BUF_LEN);
-      _udpbuf.resize(_udp.read(&_udpbuf[0], UDP_BUF_LEN));
-      if (!_udpbuf.empty()) {
+/*/
+    _tcp.print("\n");
+    _tcpbuf.resize(20);
+    uint16_t size;
+    if (2 == _tcp.read((uint8_t*)&size, 2)) {
+      //Serial.printf("size:%d\r\n", size);
+      if (size < 32768) {
+        _tcpbuf.resize(size);
+        int pos = 0;
+        int readsize = 0;
+        while (size > 0) {
+          readsize = _tcp.read(&_tcpbuf[pos], size);
+          if (readsize > 0) {
+            if (size != readsize) {
+              pos += readsize;
+              //Serial.printf("size diff:%d : %d\r\n", size, readsize);
+              delay(1);
+            }
+            size -= readsize;
+          }
+        }
         ++_count;
-        udpJpg(_udpbuf);
+        tcpJpg(_tcpbuf);
+      } else {
+        Serial.println("flush");
+        _tcp.flush();
       }
-      if (_sec != millis() / 1000) {
-        //Serial.printf("%d packet/s : %d drop/s\r\n", count, drop);
-        Serial.printf("%d packet/s\r\n", _count);
-        _sec = millis() / 1000;
-        _count = 0;
-      }
+    }
+    if (_sec != millis() / 1000) {
+      Serial.printf("%d frame/s\r\n", _count);
+      _sec = millis() / 1000;
+      _count = 0;
     }
 //*/
     return true;
   }
 private:
   enum
-  { UDP_BUF_LEN = 1460
-  , UDP_PORT = 63333
-  , DMA_BUF_LEN = 10240
-  , QUEUE_COUNT = 4
+  { DMA_BUF_LEN = 10240
+  , QUEUE_COUNT = 3
   };
-  WiFiUDP _udp;
-  uint16_t _count;
-  uint32_t _sec;
+
+  WiFiServer _tcp;
   uint8_t _wifi_stage;
 //*
   volatile bool _isRunning;
   volatile bool _flgQueue[QUEUE_COUNT];
-  std::vector<uint8_t> _udpQueue[QUEUE_COUNT];
+  std::vector<uint8_t> _tcpQueue[QUEUE_COUNT];
   uint8_t _idxQueue = 0;
   bool _softap = false;
 
@@ -143,44 +141,74 @@ private:
   static DMADrawer Dma;
 
   static void taskReceive(void* arg) {
-    UDPReceiver* me = (UDPReceiver*)arg;
-    uint16_t count = 0;
-    uint16_t drop = 0;
-    uint32_t sec = 0;
+    TCPReceiver* me = (TCPReceiver*)arg;
     uint8_t idx = 0;
+    int16_t retry = 0;
+    uint16_t size;
+    uint16_t count = 0;
+    int pos = 0;
+    int readsize = 0;
+    long totalSize = 0;
+    uint32_t sec = 0;
+
+    WiFiClient client;
 
     while (me->_isRunning) {
-      if (me->_udp.parsePacket()) {
-        if (me->_flgQueue[idx]) {
-          ++drop;
-          me->_udp.flush();
-        } else {
-          ++count;
-          me->_udpQueue[idx].resize(UDP_BUF_LEN);
-          me->_udpQueue[idx].resize(me->_udp.read(&me->_udpQueue[idx][0], UDP_BUF_LEN));
-          if (!me->_udpQueue[idx].empty()) {
-            me->_flgQueue[idx] = true;
-            idx = (1 + idx) % QUEUE_COUNT;
+/*
+      if (me->_wifi_stage == 2) {
+        me->_tcp.end();
+        me->tcpStart();
+      }
+*/
+      if (!me->_flgQueue[idx]) {
+        if (client.connected()) {
+          client.print("\n");
+          for (retry = 1000; retry != 0; --retry) {
+            if (2 <= client.available()) break;
+            delay(1);
           }
+          if (2 == client.read((uint8_t*)&size, 2)) {
+            pos = 0;
+            me->_tcpQueue[idx].resize(size);
+            for (retry = 1000; retry != 0; --retry) {
+              readsize = client.read(&me->_tcpQueue[idx][pos], size);
+              if (readsize > 0) {
+                totalSize += readsize;
+                size -= readsize;
+                if (size == 0) break;
+                pos += readsize;
+              }
+              delay(1);
+            }
+            if (size == 0) {
+              me->_flgQueue[idx] = true;
+              idx = (1 + idx) % QUEUE_COUNT;
+              ++count;
+            }
+          }
+        } else {
+          client = me->_tcp.available();
         }
       }
       if (sec != millis() / 1000) {
-        Serial.printf("draw %d packet/s : drop %d packet/s\r\n", count, drop);
+        Serial.printf("%d frame/s  %d Byte \r\n", count, totalSize);
         sec = millis() / 1000;
-        if (count == 0 && drop == 0) {
+/*
+        if (count == 0) {
           if (me->_wifi_stage == 1) me->_wifi_stage = 2;
         } else {
           me->_wifi_stage = 1;
         }
+*/
         count = 0;
-        drop = 0;
+        totalSize = 0;
       }
       delay(1);
     }
     vTaskDelete(NULL);
   } 
 
-  void udpStart(void) {
+  void tcpStart(void) {
     _wifi_stage = 0;
     Serial.println("wifi init");
     if (!_softap) {
@@ -194,16 +222,13 @@ private:
             delay(50);
           }
         }
-        if (WiFi.status() == WL_CONNECTED) break;
+        if (WiFi.status() == WL_CONNECTED) {
+          _tcp.setNoDelay(true);
+          _tcp.begin(63333);
+          Serial.println("WiFi Connected.");
+          break;
+        }
       }
-      _udp.begin(WiFi.localIP(), UDP_PORT);
-      Serial.println(WiFi.localIP());
-    } else {
-      WiFi.disconnect(true);
-      WiFi.mode(WIFI_MODE_AP);
-      WiFi.begin();
-      _udp.begin(WiFi.softAPIP(), UDP_PORT);
-      Serial.println(WiFi.softAPIP());
     }
   }
 
@@ -271,7 +296,7 @@ private:
     }
 
     if (x + ww >= jpeg->outWidth) {
-      Dma.draw((- jpeg->offX + jpeg->x + oL * 2)
+      Dma.draw( (- jpeg->offX + jpeg->x + oL * 2)
               , (y * 2 - jpeg->offY + jpeg->y)
               , jpeg->outWidth * 2  // ww * 2
               , hh * 2
@@ -294,6 +319,9 @@ private:
     uint16_t jpgWidth = decoder.width / (1 << (uint8_t)(jpeg->scale));
     uint16_t jpgHeight = decoder.height / (1 << (uint8_t)(jpeg->scale));
 
+    jpeg->x = 160 - jpgWidth;
+    jpeg->y = 120 - jpgHeight;
+
     if (jpeg->offX >= jpgWidth || jpeg->offY >= jpgHeight) {
       log_e("Offset Outside of JPEG size");
       return false;
@@ -314,19 +342,24 @@ private:
     return true;
   }
 
-  void udpJpg(const std::vector<uint8_t> &udpbuf) {
+  void tcpJpg(const std::vector<uint8_t> &udpbuf) {
+/*
     int w = (uint16_t)udpbuf[2];// + ((uint16_t)udpbuf[3] << 8);
     int y = udpbuf[0];
     int h = udpbuf[1];
+*/
+    int w = 160;
+    int y = 0;
+    int h = 120;
 
     jpg_file_decoder_t jpeg;
 
-    jpeg.src = &udpbuf[4];
-    jpeg.len = udpbuf.size() - 4;
+    jpeg.src = &udpbuf[0];
+    jpeg.len = udpbuf.size();
     jpeg.index = 0;
     jpeg.x = 160 - w;
     jpeg.y = 120 - h + y * 2;
-    jpeg.maxWidth = w;
+    jpeg.maxWidth = 160;
     jpeg.maxHeight = 120;
     jpeg.offX = 0;
     jpeg.offY = 0;
@@ -336,7 +369,7 @@ private:
     jpgDecode(&jpeg, jpgRead);
   }
 };
-DMADrawer UDPReceiver::Dma;
-uint16_t* UDPReceiver::_pixBuf[2];
+DMADrawer TCPReceiver::Dma;
+uint16_t* TCPReceiver::_pixBuf[2];
 
 #endif

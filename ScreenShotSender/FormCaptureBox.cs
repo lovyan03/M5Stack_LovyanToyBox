@@ -106,22 +106,31 @@ namespace ScreenShotSender
 
         private void FormCaptureBox_KeyDown(object sender, KeyEventArgs e)
         {
-            var newpoint = Location;
-            switch (e.KeyCode) {
-                case Keys.Up:
-                    newpoint.Y -= e.Control ? 8 : 1;
-                    break;
-                case Keys.Down:
-                    newpoint.Y += e.Control ? 8 : 1;
-                    break;
-                case Keys.Left:
-                    newpoint.X -= e.Control ? 8 : 1;
-                    break;
-                case Keys.Right:
-                    newpoint.X += e.Control ? 8 : 1;
-                    break;
+            int p = e.Control ? 10 : 1;
+            if (e.Shift)
+            {
+                var tmp = Size;
+                switch (e.KeyCode)
+                {
+                    case Keys.Up:    tmp.Height -= p; break;
+                    case Keys.Down:  tmp.Height += p; break;
+                    case Keys.Left:  tmp.Width  -= p; break;
+                    case Keys.Right: tmp.Width  += p; break;
+                }
+                Size = tmp;
             }
-            Location = newpoint;
+            else
+            {
+                var tmp = Location;
+                switch (e.KeyCode)
+                {
+                    case Keys.Up:    tmp.Y -= p; break;
+                    case Keys.Down:  tmp.Y += p; break;
+                    case Keys.Left:  tmp.X -= p; break;
+                    case Keys.Right: tmp.X += p; break;
+                }
+                Location = tmp;
+            }
         }
     }
 }

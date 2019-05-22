@@ -10,6 +10,7 @@
 #include "src/MPU9250Demo.h"
 #include "src/IP5306RegEdit.h"
 #include "src/UDPReceiver.h"
+#include "src/TCPReceiver.h"
 #include "src/AD34FFTTaskDemo.h"
 #include "src/ADInputDemo.h"
 
@@ -123,8 +124,7 @@ void setup() {
   p.end();
 
   treeView.setItems(vmi
-               { new MenuItem("ScreenShotReceiver"    , 0, callBackExec<UDPReceiver>)
-               , new MenuItem("ScreenShotReceiver(AP)", 1, callBackExec<UDPReceiver>)
+               { new MenuItem("ScreenShotReceiver", 0, callBackExec<TCPReceiver>)
                , new MenuItem("ScrollDemo"   , callBackExec<ScrollDemo>)
                , new MenuItem("MPU9250Demo"  , callBackExec<MPU9250Demo>)
                , new MenuItem("ADInputDemo"  , callBackExec<ADInputDemo>)

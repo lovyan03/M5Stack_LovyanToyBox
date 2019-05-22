@@ -13,19 +13,45 @@ namespace ScreenShotSender
         ImageCodecInfo _jpgEncoder = null;
         Bitmap _resizeBmp;
         Graphics _gResizeBmp;
-        Bitmap _jpgBuf;
-        Graphics _gJpgBuf;
-        Int64 _jpgQuality = 60;
-        int _udpPort = 63333;
-
-        ProptotypeControler.UDPSender _udp;
+        EncoderParameters _encParams = new EncoderParameters(1);
+        int _jpgQuality = 60;
+        int _port = 63333;
+        //Bitmap _jpgBuf;
+        //Graphics _gJpgBuf;
+        //UDPSender _udp;
+        TCPSender _tcp;
         System.Diagnostics.Stopwatch _sw;
+
         public FormSenderMain()
         {
             InitializeComponent();
-            updateBmp();
+        }
+
+        private void FormSenderMain_FormClosed(object sender, FormClosedEventArgs e)
+        {
+            stop();
+        }
+
+
+        [DllImport("user32.dll")]
+        extern static IntPtr GetWindowDC(IntPtr hwnd);
+        [DllImport("gdi32.dll")]
+        extern static int GetDeviceCaps(IntPtr hdc, int index);
+        [DllImport("user32.dll")]
+        extern static int ReleaseDC(IntPtr hwnd, IntPtr hdc);
+
+        private void FormSenderMain_Shown(object sender, EventArgs e)
+        {
+            const int LOGPIXELSX = 88;
+            const int LOGPIXELSY = 90;
+            var dc = GetWindowDC(IntPtr.Zero);
+            var dpiX = GetDeviceCaps(dc, LOGPIXELSX);
+            var dpiY = GetDeviceCaps(dc, LOGPIXELSY);
+            ReleaseDC(IntPtr.Zero, dc);
+
             _sw = new System.Diagnostics.Stopwatch();
-            _udp = new ProptotypeControler.UDPSender();
+            //_udp = new UDPSender();
+            _tcp = new TCPSender();
 
             foreach (ImageCodecInfo ici in ImageCodecInfo.GetImageEncoders()) {
                 if (ici.FormatID == ImageFormat.Jpeg.Guid) {
@@ -33,23 +59,24 @@ namespace ScreenShotSender
                     break;
                 }
             }
-        }
 
-        private void FormSenderMain_Shown(object sender, EventArgs e)
-        {
-            FrameVisible(true);
             formCaptureBox.Location = new Point(Location.X + 10, Location.Y + Height);
+            FrameVisible(true);
+
+            formCaptureBox.Width = 320 * dpiX / 96;
+            formCaptureBox.Height = 240 * dpiY/ 96;
             timer1.Enabled = true;
         }
 
-        private void FrameVisible(bool visible)
+        private void FrameVisible(bool flg)
         {
-            formCaptureBox.Visible = visible;
-            btnShowFrame.Text = visible ? "HideFrame" : "ShowFrame";
+            formCaptureBox.Visible = flg;
+            btnShowFrame.Text = flg ? "HideBox" : "ShowBox";
         }
         private void btnShowFrame_Click(object sender, EventArgs e)
         {
             FrameVisible(!formCaptureBox.Visible);
+            if (formCaptureBox.Visible) formCaptureBox.Focus();
         }
 
         public void updateBmp()
@@ -74,16 +101,17 @@ namespace ScreenShotSender
         void start()
         {
             var rnd = new Random();
-            
-            _udp.init((rnd.Next() & 0x7FFF) | 0x8000, _udpPort);
-            _udp.RemoteHost = tbHost.Text;
+
+            //_udp.start(tbHost.Text, _port);
+            _tcp.start(tbHost.Text, _port);
             _sw.Start();
             btnStartStopr.Text = "Stop";
         }
 
         void stop()
         {
-            _sw.Stop();
+            _sw?.Stop();
+            _tcp?.stop();
             btnStartStopr.Text = "Start";
         }
 
@@ -97,13 +125,39 @@ namespace ScreenShotSender
             pbPreview.Image = _resizeBmp;
             pbPreview.Invalidate();
 
-            if (_sw.IsRunning) udpJPGSend();
+            if (_sw.IsRunning) tcpJPGPrepare();
             timer1.Enabled = true;
         }
-        
+
+        private void tcpJPGPrepare()
+        {
+            byte[] rgbValues = { 0 };
+
+            // パラメータを配列に格納
+            using (MemoryStream ms = new MemoryStream())
+            {
+                _jpgQuality = (int)nudQuality.Value;
+                _encParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, _jpgQuality);
+                ms.WriteByte(0);
+                ms.WriteByte(0);
+                _resizeBmp.Save(ms, _jpgEncoder, _encParams);
+                rgbValues = ms.GetBuffer();
+                UInt16 len = 65535;
+                if (rgbValues.Length < len)
+                {
+                    len = (UInt16)(rgbValues.Length - 2);
+                    rgbValues[0] = (byte)(len & 0xFF);
+                    rgbValues[1] = (byte)((len >> 8) & 0xFF);
+                }
+                //_jpgQuality = Math.Min(90, Math.Max(0, _jpgQuality + (5000 - len) / 200));
+            }
+
+            _tcp.setData(rgbValues);
+        }
+
+        /*
         private void udpJPGSend()
         {
-            EncoderParameters encParams = new EncoderParameters(1);
             int restHeight = _resizeBmp.Height;
             int divide = Math.Max(1, (int)nudDivide.Value);
             int pakcetSize = (int)nudPacketSize.Value;
@@ -146,8 +200,8 @@ namespace ScreenShotSender
                         ms.WriteByte((byte)_resizeBmp.Height);
                         ms.WriteByte((byte)(_resizeBmp.Width & 0xff));
                         ms.WriteByte((byte)(_resizeBmp.Width >> 8));
-                        encParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, _jpgQuality);
-                        _jpgBuf.Save(ms, _jpgEncoder, encParams);
+                        _encParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, _jpgQuality);
+                        _jpgBuf.Save(ms, _jpgEncoder, _encParams);
                         rgbValues = ms.GetBuffer();
                     }
                     if (rgbValues.Length <= pakcetSize) break;
@@ -194,5 +248,6 @@ namespace ScreenShotSender
             } while (restHeight > 0);
             _resizeBmp.UnlockBits(bmpData);
         }
+        //*/
     }
 }
