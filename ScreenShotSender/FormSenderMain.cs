@@ -100,8 +100,6 @@ namespace ScreenShotSender
 
         void start()
         {
-            var rnd = new Random();
-
             //_udp.start(tbHost.Text, _port);
             _tcp.start(tbHost.Text, _port);
             _sw.Start();

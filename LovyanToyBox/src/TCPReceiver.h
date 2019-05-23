@@ -76,18 +76,16 @@ public:
       free(_pixBuf[i]);
   }
 
-  std::vector<uint8_t> _tcpbuf;
-  uint8_t drawQueue = 0;
   bool loop()
   {
     if (cmd == M5TreeView::eCmd::ENTER) {
       _wifi_stage = 2;
     }
 
-    if (_flgQueue[drawQueue]) {
-      tcpJpg(_tcpQueue[drawQueue]);
-      _flgQueue[drawQueue] = false;
-      drawQueue = (1 + drawQueue) % QUEUE_COUNT;
+    if (_flgQueue[_queueIndex]) {
+      tcpJpg(_tcpQueue[_queueIndex]);
+      _flgQueue[_queueIndex] = false;
+      _queueIndex = (1 + _queueIndex) % QUEUE_COUNT;
     }
 
     return true;
@@ -104,6 +102,7 @@ private:
   volatile bool _isRunning;
   volatile bool _flgQueue[QUEUE_COUNT];
   std::vector<uint8_t> _tcpQueue[QUEUE_COUNT];
+  uint8_t _queueIndex = 0;
   uint8_t _idxQueue = 0;
   bool _softap = false;
 
@@ -140,6 +139,7 @@ private:
             pos = 0;
             if (me->_tcpQueue[idx].size() < size) {
               Serial.printf("resize buf:%d", size);
+              std::vector<uint8_t>().swap(me->_tcpQueue[idx]);
               me->_tcpQueue[idx].resize(size);
               Serial.println(" done.");
             }
@@ -260,6 +260,7 @@ private:
     uint16_t ww = w - (oL + oR);
     uint16_t* p = _pixBuf[pixFlip];
     uint16_t yy = 0;
+    uint8_t r, g, b;
 
     if (_jpgScale == 1) {
       while (h--) {
@@ -267,14 +268,26 @@ private:
         line = ww;
         pixIndex = x + yy * jpeg->outWidth;
         while (line--) {
+//*
           p[pixIndex++] = jpgColor(data[0], data[1], data[2]);
+/*/
+          r = data[0];
+          g = data[1];
+          b = data[2];
+          switch ((line&1) + ((h&1)<<1)) {
+          case 0: p[pixIndex] = jpgColor(r,  g,  b); break;
+          case 1: p[pixIndex] = jpgColor((r < 251) ? r + 4 : 255, (g < 253) ? g + 2 : 255, (b < 251) ? b + 4 : 255); break;
+          case 2: p[pixIndex] = jpgColor((r < 249) ? r + 6 : 255, (g < 252) ? g + 3 : 255, (b < 249) ? b + 6 : 255); break;
+          case 3: p[pixIndex] = jpgColor((r < 253) ? r + 2 : 255, (g < 254) ? g + 1 : 255, (b < 253) ? b + 2 : 255); break;
+          }
+          ++pixIndex;
+//*/
           data += 3;
         }
         ++yy;
         data += 3 * oR;
       }
     } else {
-      uint8_t r, g, b;
       while (h--) {
         data += 3 * oL;
         line = ww;
@@ -298,7 +311,7 @@ private:
     if (x + ww >= jpeg->outWidth) {
       Dma.draw( (- jpeg->offX + jpeg->x + oL * _jpgScale)
               , (y * _jpgScale - jpeg->offY + jpeg->y)
-              , jpeg->outWidth * _jpgScale  // ww * 2
+              , jpeg->outWidth * _jpgScale
               , hh * _jpgScale
               , p);
       pixFlip = 1 - pixFlip;
