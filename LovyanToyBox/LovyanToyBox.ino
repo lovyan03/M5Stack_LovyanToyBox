@@ -124,7 +124,8 @@ void setup() {
   p.end();
 
   treeView.setItems(vmi
-               { new MenuItem("ScreenShotReceiver", 0, callBackExec<TCPReceiver>)
+               { new MenuItem("ScreenShotReceiver"    , 0, callBackExec<TCPReceiver>)
+               , new MenuItem("ScreenShotReceiver(AP)", 1, callBackExec<TCPReceiver>)
                , new MenuItem("ScrollDemo"   , callBackExec<ScrollDemo>)
                , new MenuItem("MPU9250Demo"  , callBackExec<MPU9250Demo>)
                , new MenuItem("ADInputDemo"  , callBackExec<ADInputDemo>)

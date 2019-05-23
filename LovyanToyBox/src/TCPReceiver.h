@@ -41,8 +41,12 @@ public:
     for (int i = 0; i < 2; ++i) 
       _pixBuf[i] = (uint16_t*)pvPortMallocCaps(DMA_BUF_LEN * sizeof(uint16_t), MALLOC_CAP_DMA);
 
-    tcpStart();
+    for (int i = 0; i < QUEUE_COUNT; ++i) {
+      _flgQueue[i] = false;
+      _tcpQueue[i].resize(16384);
+    }
 
+    tcpStart();
     if (!_softap) {
       M5.Lcd.drawString(WiFi.localIP().toString(), 0, 0);
     } else {
@@ -50,9 +54,6 @@ public:
     }
 
     _isRunning = true;
-    for (int i = 0; i < QUEUE_COUNT; ++i) {
-      _flgQueue[i] = false;
-    }
     Dma.setup();
 
     disableCore0WDT();
@@ -71,6 +72,8 @@ public:
       _flgQueue[i] = false;
       _tcpQueue[i].clear();
     }
+    for (int i = 0; i < 2; ++i) 
+      free(_pixBuf[i]);
   }
 
   std::vector<uint8_t> _tcpbuf;
@@ -80,52 +83,19 @@ public:
     if (cmd == M5TreeView::eCmd::ENTER) {
       _wifi_stage = 2;
     }
-//*
+
     if (_flgQueue[drawQueue]) {
       tcpJpg(_tcpQueue[drawQueue]);
       _flgQueue[drawQueue] = false;
       drawQueue = (1 + drawQueue) % QUEUE_COUNT;
     }
-/*/
-    _tcp.print("\n");
-    _tcpbuf.resize(20);
-    uint16_t size;
-    if (2 == _tcp.read((uint8_t*)&size, 2)) {
-      //Serial.printf("size:%d\r\n", size);
-      if (size < 32768) {
-        _tcpbuf.resize(size);
-        int pos = 0;
-        int readsize = 0;
-        while (size > 0) {
-          readsize = _tcp.read(&_tcpbuf[pos], size);
-          if (readsize > 0) {
-            if (size != readsize) {
-              pos += readsize;
-              //Serial.printf("size diff:%d : %d\r\n", size, readsize);
-              delay(1);
-            }
-            size -= readsize;
-          }
-        }
-        ++_count;
-        tcpJpg(_tcpbuf);
-      } else {
-        Serial.println("flush");
-        _tcp.flush();
-      }
-    }
-    if (_sec != millis() / 1000) {
-      Serial.printf("%d frame/s\r\n", _count);
-      _sec = millis() / 1000;
-      _count = 0;
-    }
-//*/
+
     return true;
   }
 private:
   enum
-  { DMA_BUF_LEN = 10240
-  , QUEUE_COUNT = 3
+  { DMA_BUF_LEN = 10240   // 320x32 pixel
+  , QUEUE_COUNT = 2
   };
 
   WiFiServer _tcp;
@@ -137,8 +107,9 @@ private:
   uint8_t _idxQueue = 0;
   bool _softap = false;
 
-  static uint16_t* _pixBuf[2];
   static DMADrawer Dma;
+  static uint16_t* _pixBuf[2];
+  static uint8_t _jpgScale;
 
   static void taskReceive(void* arg) {
     TCPReceiver* me = (TCPReceiver*)arg;
@@ -154,12 +125,10 @@ private:
     WiFiClient client;
 
     while (me->_isRunning) {
-/*
       if (me->_wifi_stage == 2) {
         me->_tcp.end();
         me->tcpStart();
       }
-*/
       if (!me->_flgQueue[idx]) {
         if (client.connected()) {
           client.print("\n");
@@ -169,7 +138,11 @@ private:
           }
           if (2 == client.read((uint8_t*)&size, 2)) {
             pos = 0;
-            me->_tcpQueue[idx].resize(size);
+            if (me->_tcpQueue[idx].size() < size) {
+              Serial.printf("resize buf:%d", size);
+              me->_tcpQueue[idx].resize(size);
+              Serial.println(" done.");
+            }
             for (retry = 1000; retry != 0; --retry) {
               readsize = client.read(&me->_tcpQueue[idx][pos], size);
               if (readsize > 0) {
@@ -177,6 +150,7 @@ private:
                 size -= readsize;
                 if (size == 0) break;
                 pos += readsize;
+                retry = 1000;
               }
               delay(1);
             }
@@ -184,14 +158,19 @@ private:
               me->_flgQueue[idx] = true;
               idx = (1 + idx) % QUEUE_COUNT;
               ++count;
+            } else {
+              Serial.println("data error");
             }
           }
         } else {
+          delay(10);
           client = me->_tcp.available();
         }
+      } else {
+        delay(1);
       }
       if (sec != millis() / 1000) {
-        Serial.printf("%d frame/s  %d Byte \r\n", count, totalSize);
+        Serial.printf("%d fps  %d Byte \r\n", count, totalSize);
         sec = millis() / 1000;
 /*
         if (count == 0) {
@@ -203,7 +182,6 @@ private:
         count = 0;
         totalSize = 0;
       }
-      delay(1);
     }
     vTaskDelete(NULL);
   } 
@@ -229,6 +207,12 @@ private:
           break;
         }
       }
+    } else {
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_MODE_AP);
+      WiFi.begin();
+      _tcp.setNoDelay(true);
+      _tcp.begin(63333);
     }
   }
 
@@ -274,32 +258,48 @@ private:
     uint16_t line;
     uint16_t hh = h;
     uint16_t ww = w - (oL + oR);
-    uint8_t r, g, b;
     uint16_t* p = _pixBuf[pixFlip];
     uint16_t yy = 0;
-    while (h--) {
-      data += 3 * oL;
-      line = ww;
-      pixIndex = x * 2 + (++yy * 2 - 1) * jpeg->outWidth * 2;
-      //pixIndex += jpeg->outWidth * 2;
-      while (line--) {
-        r = data[0];
-        g = data[1];
-        b = data[2];
-        p[pixIndex- jpeg->outWidth * 2] = jpgColor( r                     ,  g                     ,  b                     );
-        p[pixIndex++]                   = jpgColor((r < 251) ? r + 4 : 255, (g < 253) ? g + 2 : 255, (b < 251) ? b + 4 : 255);
-        p[pixIndex- jpeg->outWidth * 2] = jpgColor((r < 249) ? r + 6 : 255, (g < 252) ? g + 3 : 255, (b < 249) ? b + 6 : 255);
-        p[pixIndex++]                   = jpgColor((r < 253) ? r + 2 : 255, (g < 254) ? g + 1 : 255, (b < 253) ? b + 2 : 255);
-        data += 3;
+
+    if (_jpgScale == 1) {
+      while (h--) {
+        data += 3 * oL;
+        line = ww;
+        pixIndex = x + yy * jpeg->outWidth;
+        while (line--) {
+          p[pixIndex++] = jpgColor(data[0], data[1], data[2]);
+          data += 3;
+        }
+        ++yy;
+        data += 3 * oR;
       }
-      data += 3 * oR;
+    } else {
+      uint8_t r, g, b;
+      while (h--) {
+        data += 3 * oL;
+        line = ww;
+        pixIndex = x * _jpgScale + yy * jpeg->outWidth * _jpgScale;
+        while (line--) {
+          r = data[0];
+          g = data[1];
+          b = data[2];
+          p[pixIndex] = jpgColor(r,  g,  b);
+          p[pixIndex+1                 ] = jpgColor((r < 251) ? r + 4 : 255, (g < 253) ? g + 2 : 255, (b < 251) ? b + 4 : 255);
+          p[pixIndex  +jpeg->outWidth*2] = jpgColor((r < 249) ? r + 6 : 255, (g < 252) ? g + 3 : 255, (b < 249) ? b + 6 : 255);
+          p[pixIndex+1+jpeg->outWidth*2] = jpgColor((r < 253) ? r + 2 : 255, (g < 254) ? g + 1 : 255, (b < 253) ? b + 2 : 255);
+          pixIndex += _jpgScale;
+          data += 3;
+        }
+        yy += _jpgScale;
+        data += 3 * oR;
+      }
     }
 
     if (x + ww >= jpeg->outWidth) {
-      Dma.draw( (- jpeg->offX + jpeg->x + oL * 2)
-              , (y * 2 - jpeg->offY + jpeg->y)
-              , jpeg->outWidth * 2  // ww * 2
-              , hh * 2
+      Dma.draw( (- jpeg->offX + jpeg->x + oL * _jpgScale)
+              , (y * _jpgScale - jpeg->offY + jpeg->y)
+              , jpeg->outWidth * _jpgScale  // ww * 2
+              , hh * _jpgScale
               , p);
       pixFlip = 1 - pixFlip;
     }
@@ -319,9 +319,19 @@ private:
     uint16_t jpgWidth = decoder.width / (1 << (uint8_t)(jpeg->scale));
     uint16_t jpgHeight = decoder.height / (1 << (uint8_t)(jpeg->scale));
 
-    jpeg->x = 160 - jpgWidth;
-    jpeg->y = 120 - jpgHeight;
-
+    if (jpgWidth > 160 || jpgHeight > 120) {
+      _jpgScale = 1;
+      jpeg->x = 160 - jpgWidth/2;
+      jpeg->y = 120 - jpgHeight/2;
+      jpeg->maxWidth = 320;
+      jpeg->maxHeight = 240;
+    } else {
+      _jpgScale = 2;
+      jpeg->x = 160 - jpgWidth;
+      jpeg->y = 120 - jpgHeight;
+      jpeg->maxWidth = 160;
+      jpeg->maxHeight = 120;
+    }
     if (jpeg->offX >= jpgWidth || jpeg->offY >= jpgHeight) {
       log_e("Offset Outside of JPEG size");
       return false;
@@ -359,8 +369,6 @@ private:
     jpeg.index = 0;
     jpeg.x = 160 - w;
     jpeg.y = 120 - h + y * 2;
-    jpeg.maxWidth = 160;
-    jpeg.maxHeight = 120;
     jpeg.offX = 0;
     jpeg.offY = 0;
     jpeg.scale = JPEG_DIV_NONE;
@@ -371,5 +379,6 @@ private:
 };
 DMADrawer TCPReceiver::Dma;
 uint16_t* TCPReceiver::_pixBuf[2];
+uint8_t TCPReceiver::_jpgScale;
 
 #endif
