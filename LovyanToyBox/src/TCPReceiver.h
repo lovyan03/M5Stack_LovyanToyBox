@@ -145,64 +145,99 @@ private:
     int readsize = 0;
     long totalSize = 0;
     uint32_t sec = 0;
-
+    bool flg_error = false;
     WiFiClient client;
+    uint8_t sequence = 0;
 
     while (me->_isRunning) {
       if (me->_wifi_stage == 2) {
         me->_tcp.end();
         me->tcpStart();
       }
-      if (!me->_flgQueue[idxQueue]) {
-        if (client.connected()) {
-          client.print("\n");
-          for (retry = 1000; retry != 0; --retry) {
-            if (2 <= client.available()) break;
-            delay(1);
-          }
-          if (2 == client.read((uint8_t*)&size, 2)) {
-            totalSize += 2;
-            pos = 0;
-            for (retry = 1000; retry != 0; --retry) {
-              readsize = client.read(&me->_tcpQueue[idxQueue][pos], size);
-              if (readsize > 0) {
-                totalSize += readsize;
-                size -= readsize;
-                if (size == 0) break;
-                pos += readsize;
-                retry = 1000;
+      if (client.connected()) {
+        if (!me->_flgQueue[idxQueue]) {
+          switch (sequence) {
+
+          case 0:   // data request to client
+            client.print("\n");
+            retry = 1000;
+            ++sequence; 
+
+          case 1:   // data receive wait
+            if (2 > client.available()) {
+              if (--retry) {
+                delay(1);
+              } else {
+                flg_error = true;
               }
-              delay(1);
-              if (!client.connected()) break;
+              break;
             }
-            if (size == 0) {
-              me->_flgQueue[idxQueue] = true;
-              idxQueue = (1 + idxQueue) % QUEUE_COUNT;
-              ++count;
-            } else {
-              Serial.println("data error");
+            ++sequence; 
+
+          case 2:   // read data size
+            if (2 == client.read((uint8_t*)&size, 2)) {
+              totalSize += 2;
+              if (size < 100) {
+                Serial.printf("size too small: %d\r\n", size);
+                Serial.printf("available: %d\r\n", client.available());
+                flg_error = true;
+                break;
+              } else if (JPG_BUF_LEN < size) {
+                Serial.printf("size too large: %d\r\n", size);
+                flg_error = true;
+                break;
+              }
             }
+            pos = 0;
+            retry = 1000;
+            ++sequence;
+
+          case 3:
+            readsize = client.read(&me->_tcpQueue[idxQueue][pos], size);
+            if (0 >= readsize) {
+              if (--retry) {
+                delay(1);
+              } else {
+                Serial.println("read timeout.");
+                flg_error = true;
+              }
+              break;
+            }
+            totalSize += readsize;
+            size -= readsize;
+            if (size) {
+              pos += readsize;
+              retry = 2000;
+              break;
+            }
+            ++sequence;
+
+          case 4:
+            me->_flgQueue[idxQueue] = true;
+            idxQueue = (1 + idxQueue) % QUEUE_COUNT;
+            ++count;
+            sequence = 0;
+            break;
+          }
+          if (flg_error) {
+            client.flush();
+            flg_error = false;
+            sequence = 0;
           }
         } else {
-          delay(10);
-          client = me->_tcp.available();
-          if (client.connected()) {
-            Serial.println("tcp connect");
-          }
+          delay(1);
         }
       } else {
-        delay(1);
+        delay(10);
+        client = me->_tcp.available();
+        if (client.connected()) {
+          Serial.println("tcp connect");
+          sequence = 0;
+        }
       }
       if (sec != millis() / 1000) {
         Serial.printf("%d fps  %d Byte \r\n", count, totalSize);
         sec = millis() / 1000;
-/*
-        if (count == 0) {
-          if (me->_wifi_stage == 1) me->_wifi_stage = 2;
-        } else {
-          me->_wifi_stage = 1;
-        }
-*/
         count = 0;
         totalSize = 0;
       }

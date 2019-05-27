@@ -131,7 +131,6 @@ namespace ScreenShotSender
         {
             byte[] rgbValues = { 0 };
 
-            // パラメータを配列に格納
             using (MemoryStream ms = new MemoryStream())
             {
                 _jpgQuality = (int)nudQuality.Value;
@@ -140,17 +139,15 @@ namespace ScreenShotSender
                 ms.WriteByte(0);
                 _resizeBmp.Save(ms, _jpgEncoder, _encParams);
                 rgbValues = ms.GetBuffer();
-                UInt16 len = 65535;
-                if (rgbValues.Length < len)
+                if (rgbValues.Length < 65536)
                 {
-                    len = (UInt16)(rgbValues.Length - 2);
+                    UInt16 len = (UInt16)(rgbValues.Length - 2);
                     rgbValues[0] = (byte)(len & 0xFF);
                     rgbValues[1] = (byte)((len >> 8) & 0xFF);
+                    _tcp.setData(rgbValues);
                 }
                 //_jpgQuality = Math.Min(90, Math.Max(0, _jpgQuality + (5000 - len) / 200));
             }
-
-            _tcp.setData(rgbValues);
         }
 
         /*
