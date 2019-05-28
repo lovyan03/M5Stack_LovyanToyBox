@@ -5,9 +5,11 @@
 #include <M5TreeView.h>
 #include <WiFi.h>
 #include <WiFiServer.h>
-#include <rom/tjpgd.h>
 #include <driver/spi_master.h>
 #include <esp_heap_alloc_caps.h>
+//#include <rom/tjpgd.h>
+//#include "tjpgd.h"
+#include "tjpgdClass.h"
 #include "DMADrawer.h"
 
 #define dmaColor(r, g, b) \
@@ -80,6 +82,7 @@ public:
     disableCore0WDT();
     disableCore1WDT();
     xTaskCreatePinnedToCore(taskReceive, "taskReceive", 4096, this, 1, NULL, 0);
+    //decoder.jd_multitask_begin();
 
     return true;
   }
@@ -94,6 +97,7 @@ public:
       _flgQueue[i] = false;
       free(_tcpQueue[i]);
     }
+    //decoder.jd_multitask_end();
   }
 
   bool loop()
@@ -125,6 +129,7 @@ private:
   };
 
   WiFiServer _tcp;
+  JDEC decoder;
   uint8_t _wifi_stage;
 
   volatile bool _isRunning;
@@ -156,25 +161,37 @@ private:
       }
       if (client.connected()) {
         if (!me->_flgQueue[idxQueue]) {
-          switch (sequence) {
 
-          case 0:   // data request to client
-            client.print("\n");
+          switch (sequence) {
+          case 0:
+
+            if (client.available()) {
+              Serial.println("broken data received");
+              client.read(me->_tcpQueue[idxQueue], JPG_BUF_LEN);
+              delay(1);
+              break;
+            }
+            ++sequence;
+
+          case 1:   // data request to client
+            client.write('\n');
+            delay(1);
             retry = 1000;
             ++sequence; 
 
-          case 1:   // data receive wait
+          case 2:   // data receive wait
             if (2 > client.available()) {
               if (--retry) {
                 delay(1);
               } else {
+                Serial.println("data wait timeout");
                 flg_error = true;
               }
               break;
             }
             ++sequence; 
 
-          case 2:   // read data size
+          case 3:   // read data size
             if (2 == client.read((uint8_t*)&size, 2)) {
               totalSize += 2;
               if (size < 100) {
@@ -192,7 +209,7 @@ private:
             retry = 1000;
             ++sequence;
 
-          case 3:
+          case 4:
             readsize = client.read(&me->_tcpQueue[idxQueue][pos], size);
             if (0 >= readsize) {
               if (--retry) {
@@ -210,15 +227,14 @@ private:
               retry = 2000;
               break;
             }
-            ++sequence;
 
-          case 4:
             me->_flgQueue[idxQueue] = true;
             idxQueue = (1 + idxQueue) % QUEUE_COUNT;
             ++count;
             sequence = 0;
             break;
           }
+
           if (flg_error) {
             client.flush();
             flg_error = false;
@@ -228,11 +244,12 @@ private:
           delay(1);
         }
       } else {
-        delay(10);
         client = me->_tcp.available();
         if (client.connected()) {
           Serial.println("tcp connect");
           sequence = 0;
+        } else {
+          delay(10);
         }
       }
       if (sec != millis() / 1000) {
@@ -275,7 +292,7 @@ private:
     }
   }
 
-  static uint32_t jpgRead(JDEC *decoder, uint8_t *buf, uint32_t len) {
+  static uint16_t jpgRead(JDEC *decoder, uint8_t *buf, uint16_t len) {
     jpg_param_t *jpeg = (jpg_param_t *)decoder->device;
     if (buf) {
       memcpy(buf, (const uint8_t *)jpeg->src + jpeg->index, len);
@@ -284,7 +301,7 @@ private:
     return len;
   }
 
-  static uint32_t jpgWrite(JDEC *decoder, void *bitmap, JRECT *rect) {
+  static uint16_t jpgWrite(JDEC *decoder, void *bitmap, JRECT *rect) {
     jpg_param_t *jpeg = (jpg_param_t *)decoder->device;
     uint16_t width = decoder->width;
     uint16_t x = rect->left;
@@ -349,10 +366,7 @@ private:
     jpeg.index = 0;
     jpeg.dma = &Dma;
 
-    static uint8_t work[3100];
-    JDEC decoder;
-
-    JRESULT jres = jd_prepare(&decoder, jpgRead, work, 3100, &jpeg);
+    JRESULT jres = decoder.jd_prepare(jpgRead, &jpeg);
     if (jres != JDR_OK) {
       log_e("jd_prepare failed! %s", jd_errors[jres]);
       return false;
@@ -367,8 +381,8 @@ private:
       jpeg.x = 160 - decoder.width;
       jpeg.y = 120 - decoder.height;
     }
-
-    jres = jd_decomp(&decoder, jpgWrite, JPEG_DIV_NONE);
+//    jres = decoder.jd_decomp_multitask(jpgWrite, JPEG_DIV_NONE);
+    jres = decoder.jd_decomp(jpgWrite, JPEG_DIV_NONE);
     if (jres != JDR_OK) {
       log_e("jd_decomp failed! %s", jd_errors[jres]);
       return false;
