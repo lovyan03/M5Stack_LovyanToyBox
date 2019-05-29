@@ -18,14 +18,14 @@
 / Sep 03, 2012 R0.01b Added JD_TBLCLIP option.
 / Mar 16, 2019 R0.01c Supprted stdint.h.
 /----------------------------------------------------------------------------/
-
 /  modify by lovyan03
-/ May 28, 2019 Tweak for ArduinoESP32
+/ May 29, 2019 Tweak for ArduinoESP32
 /----------------------------------------------------------------------------*/
 
 #include "tjpgdClass.h"
 
 #include <arduino.h>
+#include <esp_task.h>
 
 /*-----------------------------------------------*/
 /* Zigzag-order to raster-order conversion table */
@@ -130,7 +130,7 @@ inline uint8_t BYTECLIP (
 /*-----------------------------------------------------------------------*/
 
 static void* alloc_pool (	/* Pointer to allocated memory block (NULL:no memory available) */
-	JDEC* jd,		/* Pointer to the decompressor object */
+	TJpgD* jd,		/* Pointer to the decompressor object */
 	uint16_t nd		/* Number of bytes to allocate */
 )
 {
@@ -156,7 +156,7 @@ static void* alloc_pool (	/* Pointer to allocated memory block (NULL:no memory a
 /*-----------------------------------------------------------------------*/
 
 static int create_qt_tbl (	/* 0:OK, !0:Failed */
-	JDEC* jd,				/* Pointer to the decompressor object */
+	TJpgD* jd,				/* Pointer to the decompressor object */
 	const uint8_t* data,	/* Pointer to the quantizer tables */
 	uint16_t ndata			/* Size of input data */
 )
@@ -192,7 +192,7 @@ static int create_qt_tbl (	/* 0:OK, !0:Failed */
 /*-----------------------------------------------------------------------*/
 
 static int create_huffman_tbl (	/* 0:OK, !0:Failed */
-	JDEC* jd,					/* Pointer to the decompressor object */
+	TJpgD* jd,					/* Pointer to the decompressor object */
 	const uint8_t* data,		/* Pointer to the packed huffman tables */
 	uint16_t ndata				/* Size of input data */
 )
@@ -247,7 +247,7 @@ static int create_huffman_tbl (	/* 0:OK, !0:Failed */
 /*-----------------------------------------------------------------------*/
 
 static int bitext (	/* >=0: extracted data, <0: error code */
-	JDEC* jd,		/* Pointer to the decompressor object */
+	TJpgD* jd,		/* Pointer to the decompressor object */
 	int nbit		/* Number of bits to extract (1 to 11) */
 )
 {
@@ -297,7 +297,7 @@ static int bitext (	/* >=0: extracted data, <0: error code */
 /*-----------------------------------------------------------------------*/
 
 static int16_t huffext (	/* >=0: decoded data, <0: error code */
-	JDEC* jd,				/* Pointer to the decompressor object */
+	TJpgD* jd,				/* Pointer to the decompressor object */
 	const uint8_t* hbits,	/* Pointer to the bit distribution table */
 	const uint16_t* hcode,	/* Pointer to the code word table */
 	const uint8_t* hdata	/* Pointer to the data table */
@@ -469,7 +469,7 @@ static void block_idct (
 /*-----------------------------------------------------------------------*/
 
 static JRESULT mcu_load (
-	JDEC* jd,		/* Pointer to the decompressor object */
+	TJpgD* jd,		/* Pointer to the decompressor object */
 	uint8_t* bp,		/* mcubuf */
 	int32_t* tmp	/* Block working buffer for de-quantize and IDCT */
 )
@@ -551,10 +551,10 @@ static JRESULT mcu_load (
 /*-----------------------------------------------------------------------*/
 
 static JRESULT mcu_output (
-	JDEC* jd,		/* Pointer to the decompressor object */
+	TJpgD* jd,		/* Pointer to the decompressor object */
 	uint8_t* mcubuf,
 	uint8_t* workbuf,
-	uint16_t (*outfunc)(JDEC*, void*, JRECT*),	/* RGB output function */
+	uint16_t (*outfunc)(TJpgD*, void*, JRECT*),	/* RGB output function */
 	uint16_t x,		/* MCU position in the image (left of the MCU) */
 	uint16_t y		/* MCU position in the image (top of the MCU) */
 )
@@ -706,7 +706,7 @@ static JRESULT mcu_output (
 /*-----------------------------------------------------------------------*/
 
 static JRESULT restart (
-	JDEC* jd,		/* Pointer to the decompressor object */
+	TJpgD* jd,		/* Pointer to the decompressor object */
 	uint16_t rstn	/* Expected restert sequense number */
 )
 {
@@ -752,8 +752,8 @@ static JRESULT restart (
 #define	LDB_WORD(ptr)		(uint16_t)(((uint16_t)*((uint8_t*)(ptr))<<8)|(uint16_t)*(uint8_t*)((ptr)+1))
 
 
-JRESULT JDEC::jd_prepare (
-	uint16_t (*infunc)(JDEC*, uint8_t*, uint16_t),	/* JPEG strem input function */
+JRESULT TJpgD::prepare (
+	uint16_t (*infunc)(TJpgD*, uint8_t*, uint16_t),	/* JPEG strem input function */
 	void* dev			/* I/O device identifier for the session */
 )
 {
@@ -801,12 +801,11 @@ JRESULT JDEC::jd_prepare (
 		len -= 2;		/* Content size excluding length field */
 		ofs += 4 + len;	/* Number of bytes loaded */
 
+		/* Load segment data */
+		if (len > JD_SZBUF) return JDR_MEM2;
+		if (this->infunc(this, seg, len) != len) return JDR_INP;
 		switch (marker & 0xFF) {
 		case 0xC0:	/* SOF0 (baseline JPEG) */
-			/* Load segment data */
-			if (len > JD_SZBUF) return JDR_MEM2;
-			if (this->infunc(this, seg, len) != len) return JDR_INP;
-
 			this->width = LDB_WORD(seg+3);		/* Image width in unit of pixel */
 			this->height = LDB_WORD(seg+1);		/* Image height in unit of pixel */
 			if (seg[5] != 3) return JDR_FMT3;	/* Err: Supports only Y/Cb/Cr format */
@@ -829,39 +828,23 @@ JRESULT JDEC::jd_prepare (
 			break;
 
 		case 0xDD:	/* DRI */
-			/* Load segment data */
-			if (len > JD_SZBUF) return JDR_MEM2;
-			if (this->infunc(this, seg, len) != len) return JDR_INP;
-
 			/* Get restart interval (MCUs) */
 			this->nrst = LDB_WORD(seg);
 			break;
 
 		case 0xC4:	/* DHT */
-			/* Load segment data */
-			if (len > JD_SZBUF) return JDR_MEM2;
-			if (this->infunc(this, seg, len) != len) return JDR_INP;
-
 			/* Create huffman tables */
 			rc = (JRESULT)create_huffman_tbl(this, seg, len);
 			if (rc) return rc;
 			break;
 
 		case 0xDB:	/* DQT */
-			/* Load segment data */
-			if (len > JD_SZBUF) return JDR_MEM2;
-			if (this->infunc(this, seg, len) != len) return JDR_INP;
-
 			/* Create de-quantizer tables */
 			rc = (JRESULT)create_qt_tbl(this, seg, len);
 			if (rc) return rc;
 			break;
 
 		case 0xDA:	/* SOS */
-			/* Load segment data */
-			if (len > JD_SZBUF) return JDR_MEM2;
-			if (this->infunc(this, seg, len) != len) return JDR_INP;
-
 			if (!this->width || !this->height) return JDR_FMT1;	/* Err: Invalid image size */
 
 			if (seg[0] != 3) return JDR_FMT3;				/* Err: Supports only three color components format */
@@ -916,10 +899,7 @@ JRESULT JDEC::jd_prepare (
 			return JDR_FMT3;	/* Unsuppoted JPEG standard (may be progressive JPEG) */
 
 		default:	/* Unknown segment (comment, exif or etc..) */
-			/* Skip segment data */
-			if (this->infunc(this, 0, len) != len) {	/* Null pointer specifies to skip bytes of stream */
-				return JDR_INP;
-			}
+			break;
 		}
 	}
 }
@@ -931,29 +911,30 @@ JRESULT JDEC::jd_prepare (
 /* Start to decompress the JPEG picture                                  */
 /*-----------------------------------------------------------------------*/
 
-JRESULT JDEC::jd_decomp (
-	uint16_t (*outfunc)(JDEC*, void*, JRECT*),	/* RGB output function */
+JRESULT TJpgD::decomp (
+	uint16_t (*outfunc)(TJpgD*, void*, JRECT*),	/* RGB output function */
+	uint16_t (*linefunc)(TJpgD*,uint16_t,uint8_t),
 	uint8_t scale							/* Output de-scaling factor (0 to 3) */
 )
 {
 	uint16_t x, y, mx, my;
 	uint16_t rst, rsc;
 	JRESULT rc;
-	uint8_t mcubuf[512];
-	uint8_t workbuf[832];
+	uint8_t workbuf[768];
+	uint8_t mcubuf[384];
 
 	if (scale > (JD_USE_SCALE ? 3 : 0)) return JDR_PAR;
 	this->scale = scale;
 
-	mx = this->msx * 8; my = this->msy * 8;			/* Size of the MCU (pixel) */
+	mx = msx * 8; my = msy * 8;			/* Size of the MCU (pixel) */
 
-	this->dcv[2] = this->dcv[1] = this->dcv[0] = 0;	/* Initialize DC values */
+	dcv[2] = dcv[1] = dcv[0] = 0;	/* Initialize DC values */
 	rst = rsc = 0;
 
 	rc = JDR_OK;
-	for (y = 0; y < this->height; y += my) {		/* Vertical loop of MCUs */
-		for (x = 0; x < this->width; x += mx) {	/* Horizontal loop of MCUs */
-			if (this->nrst && rst++ == this->nrst) {	/* Process restart interval if enabled */
+	for (y = 0; y < height; y += my) {		/* Vertical loop of MCUs */
+		for (x = 0; x < width; x += mx) {	/* Horizontal loop of MCUs */
+			if (nrst && rst++ == nrst) {	/* Process restart interval if enabled */
 				rc = restart(this, rsc++);
 				if (rc != JDR_OK) return rc;
 				rst = 1;
@@ -963,6 +944,7 @@ JRESULT JDEC::jd_decomp (
 			rc = mcu_output(this, mcubuf, (uint8_t*)workbuf, outfunc, x, y);	/* Output the MCU (color space conversion, scaling and output) */
 			if (rc != JDR_OK) return rc;
 		}
+		if (linefunc) linefunc(this, y, (height < y + my) ? height - y : my);
 	}
 
 	return rc;
@@ -974,14 +956,15 @@ JRESULT JDEC::jd_decomp (
 
 
 typedef struct {
-	JDEC* jd;
+	TJpgD* jd;
 	uint8_t* mcubuf;
 	uint8_t* workbuf;
-	uint16_t (*outfunc)(JDEC*, void*, JRECT*);
+	uint16_t (*outfunc)(TJpgD*, void*, JRECT*);
 	uint16_t x;
 	uint16_t y;
-	volatile uint8_t queue;
+	volatile bool queue;
 	SemaphoreHandle_t sem;
+	TaskHandle_t task;
 } param_task_output;
 static param_task_output param;
 
@@ -1003,30 +986,31 @@ static void task_output(void* arg)
 	vTaskDelete(NULL);
 }
 
-void JDEC::jd_multitask_begin ()
+void TJpgD::multitask_begin ()
 {
 	param.queue = true;
 	param.sem = xSemaphoreCreateBinary();
 
-	xTaskCreatePinnedToCore(task_output, "task_output", 2048, &param, 2, NULL, 0);
+	xTaskCreatePinnedToCore(task_output, "task_output", 2048, &param, 2, &param.task, 0);
 }
 
-void JDEC::jd_multitask_end ()
+void TJpgD::multitask_end ()
 {
-	param.queue = 0;
+	param.queue = false;
 	xSemaphoreGive(param.sem);
 }
 
-JRESULT JDEC::jd_decomp_multitask (
-	uint16_t (*outfunc)(JDEC*, void*, JRECT*),	/* RGB output function */
+JRESULT TJpgD::decomp_multitask (
+	uint16_t (*outfunc)(TJpgD*, void*, JRECT*),	/* RGB output function */
+	uint16_t (*linefunc)(TJpgD*,uint16_t,uint8_t),
 	uint8_t scale							/* Output de-scaling factor (0 to 3) */
 )
 {
 	uint16_t x, y, mx, my;
 	uint16_t rst, rsc;
 	JRESULT rc;
-	uint8_t mcubufs[2][512];
-	uint8_t workbufs[2][832];
+	uint8_t workbufs[2][768];
+	uint8_t mcubufs[2][384];
 
 	if (scale > (JD_USE_SCALE ? 3 : 0)) return JDR_PAR;
 	this->scale = scale;
@@ -1039,7 +1023,7 @@ JRESULT JDEC::jd_decomp_multitask (
 
 	dcv[2] = dcv[1] = dcv[0] = 0;	/* Initialize DC values */
 	rst = rsc = 0;
-	uint16_t lastx = ((width-1) / mx) * mx;
+	uint16_t lastx = ((width - 1) / mx - 1) * mx;
 
 	rc = JDR_OK;
 	for (y = 0; rc == JDR_OK && y < height; y += my) {		/* Vertical loop of MCUs */
@@ -1051,23 +1035,27 @@ JRESULT JDEC::jd_decomp_multitask (
 			}
 			rc = mcu_load(this, mcubufs[flip], (int32_t*)workbufs[flip]);					/* Load an MCU (decompress huffman coded stream and apply IDCT) */
 			if (rc != JDR_OK) break;
-			if ((!param.queue) && (x != lastx)) {
+			if ((!param.queue) && (x < (lastx + (y != 0)))) {
+//mcubufs[flip][0] = 0;
+//mcubufs[flip][1] = 0;
 				param.x = x;
 				param.y = y;
 				param.mcubuf  = mcubufs[flip];
 				param.workbuf = (uint8_t*)workbufs[flip];
-				param.queue = 1;
+				param.queue = true;
 				xSemaphoreGive(param.sem);
 				flip = !flip;
 			} else {
+//mcubufs[flip][0] = 0xFF;
+//mcubufs[flip][1] = 0xFF;
 				rc = mcu_output(this, mcubufs[flip], (uint8_t*)workbufs[flip], outfunc, x, y);	/* Output the MCU (color space conversion, scaling and output) */
 			}
 		}
-		while (param.queue) delay(0);
+		while (param.queue) taskYIELD();
+		if (linefunc) linefunc(this, y, (height < y + my) ? height - y : my);
 	}
 
 	return rc;
 }
-
 
 

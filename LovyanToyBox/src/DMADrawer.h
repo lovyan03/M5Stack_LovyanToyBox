@@ -19,7 +19,7 @@ public:
   bool setup(uint32_t buflen);
   void close();
   uint16_t* getNextBuffer();
-  void draw(uint16_t x, uint16_t y, uint16_t w, uint16_t h, volatile bool *flg_go = NULL);
+  void draw(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
   void draw_finish();
 };
 

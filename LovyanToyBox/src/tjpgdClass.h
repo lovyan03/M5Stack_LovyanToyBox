@@ -2,11 +2,11 @@
 / TJpgDec - Tiny JPEG Decompressor include file               (C)ChaN, 2019
 /-----------------------------------------------------------------------------/
 /  modify by lovyan03
-/ May 28, 2019 Tweak for ArduinoESP32
+/ May 29, 2019 Tweak for ArduinoESP32
 /----------------------------------------------------------------------------*/
 
-#ifndef DEF_TJPGDEC
-#define DEF_TJPGDEC
+#ifndef _TJPGDEC_H_
+#define _TJPGDEC_H_
 /*---------------------------------------------------------------------------*/
 /* System Configurations */
 
@@ -47,8 +47,8 @@ typedef struct {
 } JRECT;
 
 /* Decompressor object structure */
-typedef struct JDEC JDEC;
-struct JDEC {
+typedef struct TJpgD TJpgD;
+struct TJpgD {
 	uint16_t dctr;				/* Number of bytes available in the input buffer */
 	uint8_t* dptr;				/* Current data read ptr */
 	uint8_t* inbuf;				/* Bit stream input buffer */
@@ -63,21 +63,17 @@ struct JDEC {
 	uint16_t* huffcode[2][2];	/* Huffman code word tables [id][dcac] */
 	uint8_t* huffdata[2][2];	/* Huffman decoded data tables [id][dcac] */
 	int32_t* qttbl[4];			/* Dequantizer tables [id] */
-//	void* workbufs[2];			/* Working buffer for IDCT and RGB output */
-//	uint8_t* mcubuf;			/* Working buffer for the MCU */
 	void* pool;					/* Pointer to available memory pool */
 	uint16_t sz_pool;			/* Size of momory pool (bytes available) */
-	uint16_t (*infunc)(JDEC*, uint8_t*, uint16_t);/* Pointer to jpeg stream input function */
+	uint16_t (*infunc)(TJpgD*, uint8_t*, uint16_t);/* Pointer to jpeg stream input function */
 	void* device;				/* Pointer to I/O device identifiler for the session */
 
-	void jd_multitask_begin ();
-	void jd_multitask_end ();
 
-/* TJpgDec API functions */
-//	JRESULT jd_prepare (uint16_t(*)(JDEC*,uint8_t*,uint16_t), void*, uint16_t, void*);
-	JRESULT jd_prepare (uint16_t(*)(JDEC*,uint8_t*,uint16_t), void*);
-	JRESULT jd_decomp (uint16_t(*)(JDEC*,void*,JRECT*), uint8_t);
-	JRESULT jd_decomp_multitask (uint16_t(*)(JDEC*,void*,JRECT*), uint8_t);
+	JRESULT prepare (uint16_t(*)(TJpgD*,uint8_t*,uint16_t), void*);
+	JRESULT decomp (uint16_t(*)(TJpgD*,void*,JRECT*), uint16_t(*)(TJpgD*,uint16_t,uint8_t) = 0, uint8_t = 0);
+	JRESULT decomp_multitask (uint16_t(*)(TJpgD*,void*,JRECT*), uint16_t(*)(TJpgD*,uint16_t,uint8_t) = 0, uint8_t = 0);
+	static void multitask_begin ();
+	static void multitask_end ();
 };
 
 

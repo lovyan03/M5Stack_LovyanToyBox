@@ -73,7 +73,7 @@ uint16_t* DMADrawer::getNextBuffer() {
   return _pixBuf[_pixFlip];
 }
 
-void DMADrawer::draw(uint16_t x, uint16_t y, uint16_t w, uint16_t h, volatile bool *flg_go)
+void DMADrawer::draw(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
 {
   esp_err_t ret;
   static spi_transaction_t trans[6];
@@ -126,7 +126,6 @@ void DMADrawer::draw(uint16_t x, uint16_t y, uint16_t w, uint16_t h, volatile bo
       trans[5].length = w * 2 * 8 * h;          //Data length, in bits
       trans[5].flags = 0;                       //undo SPI_TRANS_USE_TXDATA flag
       _pixFlip = !_pixFlip;
-      while (flg_go && !*flg_go) delay(0);
       break;
     }
     ret = spi_device_queue_trans(_spi, &trans[i], portMAX_DELAY);

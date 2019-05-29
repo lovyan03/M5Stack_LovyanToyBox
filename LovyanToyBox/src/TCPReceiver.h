@@ -7,8 +7,6 @@
 #include <WiFiServer.h>
 #include <driver/spi_master.h>
 #include <esp_heap_alloc_caps.h>
-//#include <rom/tjpgd.h>
-//#include "tjpgd.h"
 #include "tjpgdClass.h"
 #include "DMADrawer.h"
 
@@ -29,19 +27,8 @@ static const uint8_t Clip8[] = {
   255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
 };
 
-
 class TCPReceiver
 {
-  typedef struct {
-    uint16_t x;
-    uint16_t y;
-    const void *src;
-    DMADrawer *dma;
-    size_t index;
-    uint8_t magnify;
-  } jpg_param_t;
-
-
 public:
   TCPReceiver() {}
 
@@ -64,10 +51,6 @@ public:
   bool setup()
   {
     Serial.println("setup");
-    for (int i = 0; i < QUEUE_COUNT; ++i) {
-      _flgQueue[i] = false;
-      _tcpQueue[i] = (uint8_t*)pvPortMallocCaps(JPG_BUF_LEN, MALLOC_CAP_8BIT);
-    }
 
     tcpStart();
     if (!_softap) {
@@ -76,47 +59,49 @@ public:
       M5.Lcd.drawString(WiFi.softAPIP().toString(), 0, 0);
     }
 
-    _isRunning = true;
-    Dma.setup(DMA_BUF_LEN);
+    _dma.setup(DMA_BUF_LEN);
+    _jdec.multitask_begin();
 
     disableCore0WDT();
     disableCore1WDT();
-    xTaskCreatePinnedToCore(taskReceive, "taskReceive", 4096, this, 1, NULL, 0);
-    //decoder.jd_multitask_begin();
 
     return true;
   }
   void close()
   {
-    _isRunning = false;
-    delay(10);
-    _tcp.available().stop();
     _tcp.stop();
-    Dma.close();
-    for (int i = 0; i < QUEUE_COUNT; ++i) {
-      _flgQueue[i] = false;
-      free(_tcpQueue[i]);
-    }
-    //decoder.jd_multitask_end();
+    _dma.close();
+    _jdec.multitask_end();
   }
 
   bool loop()
   {
-    if (cmd == M5TreeView::eCmd::ENTER) {
-      _wifi_stage = 2;
-    }
-
-    if (_flgQueue[_queueIndex]) {
-      if (M5.BtnC.isPressed()) {  // DEBUG
-        uint32_t ms = micros();
-        drawJpg(_tcpQueue[_queueIndex]);
-        ms = micros() - ms;
-        Serial.printf("draw:%d\r\n", ms);
-      } else {
-        drawJpg(_tcpQueue[_queueIndex]);
+    if (!_client.connected()) {
+      _client = _tcp.available();
+      _recv_requested = false;
+    } else {
+      if (_recv_requested) {
+        _recv_requested = false;
+        for (uint16_t retry = 1000; !_client.available() && retry; --retry) delay(1);
+        if (2 == _client.read((uint8_t*)&_recv_rest, 2)) {
+          if (_recv_rest > 100) {
+            if (drawJpg()) ++_drawCount;
+          } else {
+            Serial.println("data error");
+            delay(10);
+          }
+        }
       }
-      _flgQueue[_queueIndex] = false;
-      _queueIndex = (1 + _queueIndex) % QUEUE_COUNT;
+      if (!_recv_requested) {
+        while (0 < _client.read(_tcpBuf, TCP_BUF_LEN)) delay(1);
+        _client.write('\n');
+        _recv_requested = true;
+      }
+    }
+    if (_sec != millis() / 1000) {
+      Serial.printf("%d fps  \r\n", _drawCount);
+      _sec = millis() / 1000;
+      _drawCount = 0;
     }
 
     return true;
@@ -124,146 +109,26 @@ public:
 private:
   enum
   { DMA_BUF_LEN = 10240   // 320x32 pixel
-  , JPG_BUF_LEN = 65536
-  , QUEUE_COUNT = 2
+  , TCP_BUF_LEN = 512
+  , QUEUE_drawCount = 2
   };
 
   WiFiServer _tcp;
-  JDEC decoder;
-  uint8_t _wifi_stage;
-
-  volatile bool _isRunning;
-  volatile bool _flgQueue[QUEUE_COUNT];
-  uint8_t* _tcpQueue[QUEUE_COUNT];
-  uint8_t _queueIndex = 0;
+  WiFiClient _client;
+  DMADrawer _dma;
+  TJpgD _jdec;
+  uint16_t _jpg_x;
+  uint16_t _jpg_y;
+  uint16_t _recv_rest = 0;
+  bool _recv_requested = false;
+  uint8_t _jpg_magnify;
+  uint8_t _tcpBuf[TCP_BUF_LEN];
+  uint32_t _sec = 0;
+  uint8_t _drawCount = 0;
   bool _softap = false;
 
-  DMADrawer Dma;
-
-  static void taskReceive(void* arg) {
-    TCPReceiver* me = (TCPReceiver*)arg;
-    uint16_t retry = 0;
-    uint16_t size;
-    uint16_t count = 0;
-    uint8_t idxQueue = 0;
-    int pos = 0;
-    int readsize = 0;
-    long totalSize = 0;
-    uint32_t sec = 0;
-    bool flg_error = false;
-    WiFiClient client;
-    uint8_t sequence = 0;
-
-    while (me->_isRunning) {
-      if (me->_wifi_stage == 2) {
-        me->_tcp.end();
-        me->tcpStart();
-      }
-      if (client.connected()) {
-        if (!me->_flgQueue[idxQueue]) {
-
-          switch (sequence) {
-          case 0:
-
-            if (client.available()) {
-              Serial.println("broken data received");
-              client.read(me->_tcpQueue[idxQueue], JPG_BUF_LEN);
-              delay(1);
-              break;
-            }
-            ++sequence;
-
-          case 1:   // data request to client
-            client.write('\n');
-            delay(1);
-            retry = 1000;
-            ++sequence; 
-
-          case 2:   // data receive wait
-            if (2 > client.available()) {
-              if (--retry) {
-                delay(1);
-              } else {
-                Serial.println("data wait timeout");
-                flg_error = true;
-              }
-              break;
-            }
-            ++sequence; 
-
-          case 3:   // read data size
-            if (2 == client.read((uint8_t*)&size, 2)) {
-              totalSize += 2;
-              if (size < 100) {
-                Serial.printf("size too small: %d\r\n", size);
-                Serial.printf("available: %d\r\n", client.available());
-                flg_error = true;
-                break;
-              } else if (JPG_BUF_LEN < size) {
-                Serial.printf("size too large: %d\r\n", size);
-                flg_error = true;
-                break;
-              }
-            }
-            pos = 0;
-            retry = 1000;
-            ++sequence;
-
-          case 4:
-            readsize = client.read(&me->_tcpQueue[idxQueue][pos], size);
-            if (0 >= readsize) {
-              if (--retry) {
-                delay(1);
-              } else {
-                Serial.println("read timeout.");
-                flg_error = true;
-              }
-              break;
-            }
-            totalSize += readsize;
-            size -= readsize;
-            if (size) {
-              pos += readsize;
-              retry = 2000;
-              break;
-            }
-
-            me->_flgQueue[idxQueue] = true;
-            idxQueue = (1 + idxQueue) % QUEUE_COUNT;
-            ++count;
-            sequence = 0;
-            break;
-          }
-
-          if (flg_error) {
-            client.flush();
-            flg_error = false;
-            sequence = 0;
-          }
-        } else {
-          delay(1);
-        }
-      } else {
-        client = me->_tcp.available();
-        if (client.connected()) {
-          Serial.println("tcp connect");
-          sequence = 0;
-        } else {
-          delay(10);
-        }
-      }
-      if (sec != millis() / 1000) {
-        Serial.printf("%d fps  %d Byte \r\n", count, totalSize);
-        sec = millis() / 1000;
-        count = 0;
-        totalSize = 0;
-      }
-    }
-    vTaskDelete(NULL);
-  } 
 
   void tcpStart(void) {
-    _wifi_stage = 0;
     Serial.println("wifi init");
     if (!_softap) {
       WiFi.mode(WIFI_MODE_STA);
@@ -292,27 +157,38 @@ private:
     }
   }
 
-  static uint16_t jpgRead(JDEC *decoder, uint8_t *buf, uint16_t len) {
-    jpg_param_t *jpeg = (jpg_param_t *)decoder->device;
+  static uint16_t jpgRead(TJpgD *jdec, uint8_t *buf, uint16_t len) {
+    TCPReceiver* me = (TCPReceiver*)jdec->device;
+    WiFiClient* client = &me->_client;
+    if (!client->connected()) return 0;
+
+    for (uint16_t wait = 1000; 2 > client->available() && wait != 0; --wait) delay(1);
     if (buf) {
-      memcpy(buf, (const uint8_t *)jpeg->src + jpeg->index, len);
+      len = client->read(buf, len);
+    } else {
+      len = client->read(me->_tcpBuf, len);
     }
-    jpeg->index += len;
+
+    me->_recv_rest -= len;
+    if (!me->_recv_rest) {
+      client->write('\n');
+      me->_recv_requested = true;
+    }
     return len;
   }
 
-  static uint16_t jpgWrite(JDEC *decoder, void *bitmap, JRECT *rect) {
-    jpg_param_t *jpeg = (jpg_param_t *)decoder->device;
-    uint16_t width = decoder->width;
+  static uint16_t jpgWrite(TJpgD *jdec, void *bitmap, JRECT *rect) {
+    TCPReceiver* me = (TCPReceiver*)jdec->device;
+    uint16_t width = jdec->width;
     uint16_t x = rect->left;
     uint16_t y = rect->top;
     uint16_t w = rect->right + 1 - x;
     uint16_t h = rect->bottom + 1 - y;
-    uint16_t* p = jpeg->dma->getNextBuffer();
+    uint16_t* p = me->_dma.getNextBuffer();
     uint16_t* dst;
 
     uint8_t *data = (uint8_t*)bitmap;
-    uint8_t magnify = jpeg->magnify;
+    uint8_t magnify = me->_jpg_magnify;
     uint8_t line;
     uint8_t ww = w;
     uint8_t hh = h;
@@ -349,42 +225,43 @@ private:
       }
     }
 
-    if (x + w >= width) {
-      jpeg->dma->draw( jpeg->x
-                     , jpeg->y + (y << magnify)
-                     , width << magnify
-                     , h     << magnify
-                     );
-    }
     return 1;
   }
 
-  bool drawJpg(uint8_t* udpbuf) {
-    jpg_param_t jpeg;
+  static uint16_t jpgLine(TJpgD *jdec, uint16_t y, uint8_t h) {
+    TCPReceiver* me = (TCPReceiver*)jdec->device;
+    uint8_t magnify = me->_jpg_magnify;
+    me->_dma.draw( me->_jpg_x
+                 , me->_jpg_y + (y << magnify)
+                 , jdec->width << magnify
+                 , h << magnify
+                 );
+    return 1;
+  }
 
-    jpeg.src = &udpbuf[0];
-    jpeg.index = 0;
-    jpeg.dma = &Dma;
-
-    JRESULT jres = decoder.jd_prepare(jpgRead, &jpeg);
+  bool drawJpg() {
+    JRESULT jres = _jdec.prepare(jpgRead, this);
     if (jres != JDR_OK) {
-      log_e("jd_prepare failed! %s", jd_errors[jres]);
+      log_e("prepare failed! %s", jd_errors[jres]);
       return false;
     }
 
-    if (decoder.width > 160 || decoder.height > 120) {
-      jpeg.magnify = 0;
-      jpeg.x = 160 - decoder.width/2;
-      jpeg.y = 120 - decoder.height/2;
+    if (_jdec.width > 160 || _jdec.height > 120) {
+      _jpg_magnify = 0;
+      _jpg_x = 160 - _jdec.width/2;
+      _jpg_y = 120 - _jdec.height/2;
     } else {
-      jpeg.magnify = 1;
-      jpeg.x = 160 - decoder.width;
-      jpeg.y = 120 - decoder.height;
+      _jpg_magnify = 1;
+      _jpg_x = 160 - _jdec.width;
+      _jpg_y = 120 - _jdec.height;
     }
-//    jres = decoder.jd_decomp_multitask(jpgWrite, JPEG_DIV_NONE);
-    jres = decoder.jd_decomp(jpgWrite, JPEG_DIV_NONE);
+    if (M5.BtnC.isPressed()) {  // DEBUG
+      jres = _jdec.decomp(jpgWrite, jpgLine);
+    } else {
+      jres = _jdec.decomp_multitask(jpgWrite, jpgLine);
+    }
     if (jres != JDR_OK) {
-      log_e("jd_decomp failed! %s", jd_errors[jres]);
+      log_e("decomp failed! %s", jd_errors[jres]);
       return false;
     }
 
