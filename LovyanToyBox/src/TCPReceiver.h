@@ -162,16 +162,16 @@ private:
     WiFiClient* client = &me->_client;
     if (!client->connected()) return 0;
 
-    for (uint16_t wait = 1000; 2 > client->available() && wait != 0; --wait) delay(1);
-    if (buf) {
-      len = client->read(buf, len);
-    } else {
-      len = client->read(me->_tcpBuf, len);
-    }
+    for (uint16_t retry = 1000; 2 > client->available() && retry != 0; --retry) delay(1);
+
+    if (len < me->_recv_rest && me->_recv_rest < len<<1) 
+      len = me->_recv_rest - len;
+
+    len = client->read(buf ? buf : me->_tcpBuf, len);
 
     me->_recv_rest -= len;
     if (!me->_recv_rest) {
-      client->write('\n');
+      client->write('\n');  // request the next image from the client
       me->_recv_requested = true;
     }
     return len;

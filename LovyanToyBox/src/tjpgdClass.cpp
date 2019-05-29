@@ -991,7 +991,7 @@ void TJpgD::multitask_begin ()
 	param.queue = true;
 	param.sem = xSemaphoreCreateBinary();
 
-	xTaskCreatePinnedToCore(task_output, "task_output", 2048, &param, 2, &param.task, 0);
+	xTaskCreatePinnedToCore(task_output, "task_output", 1024, &param, 2, &param.task, 0);
 }
 
 void TJpgD::multitask_end ()
@@ -1026,8 +1026,8 @@ JRESULT TJpgD::decomp_multitask (
 	uint16_t lastx = ((width - 1) / mx - 1) * mx;
 
 	rc = JDR_OK;
-	for (y = 0; rc == JDR_OK && y < height; y += my) {		/* Vertical loop of MCUs */
-		for (x = 0; rc == JDR_OK && x < width; x += mx) {	/* Horizontal loop of MCUs */
+	for (y = 0; y < height; y += my) {		/* Vertical loop of MCUs */
+		for (x = 0; x < width; x += mx) {	/* Horizontal loop of MCUs */
 			if (nrst && rst++ == nrst) {	/* Process restart interval if enabled */
 				rc = restart(this, rsc++);
 				if (rc != JDR_OK) break;
@@ -1052,6 +1052,7 @@ JRESULT TJpgD::decomp_multitask (
 			}
 		}
 		while (param.queue) taskYIELD();
+		if (rc != JDR_OK) break;
 		if (linefunc) linefunc(this, y, (height < y + my) ? height - y : my);
 	}
 
