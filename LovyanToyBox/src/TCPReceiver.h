@@ -82,18 +82,19 @@ public:
     } else {
       if (_recv_requested) {
         _recv_requested = false;
-        for (uint16_t retry = 1000; !_client.available() && retry; --retry) delay(1);
+        for (uint16_t retry = 1000; 2 > _client.available() && retry; --retry) delay(1);
         if (2 == _client.read((uint8_t*)&_recv_rest, 2)) {
           if (_recv_rest > 100) {
             if (drawJpg()) ++_drawCount;
           } else {
             Serial.println("data error");
-            delay(10);
           }
         }
       }
       if (!_recv_requested) {
-        while (0 < _client.read(_tcpBuf, TCP_BUF_LEN)) delay(1);
+        delay(10);
+        while (0 < _client.read(_tcpBuf, TCP_BUF_LEN)) delay(10);
+        Serial.println("data request");
         _client.write('\n');
         _recv_requested = true;
       }
@@ -162,11 +163,11 @@ private:
     WiFiClient* client = &me->_client;
     if (!client->connected()) return 0;
 
-    for (uint16_t retry = 1000; 2 > client->available() && retry != 0; --retry) delay(1);
-
-    if (len < me->_recv_rest && me->_recv_rest < len<<1) 
+    if (len < me->_recv_rest && (me->_recv_rest >> 1) < len) { // dataend read tweak
       len = me->_recv_rest - len;
-
+    }
+    int necessary = (len == JD_SZBUF) ? 1 : (len < me->_recv_rest ? len : me->_recv_rest);
+    for (uint16_t retry = 1000; client->available() < necessary && retry; --retry) delay(1);
     len = client->read(buf ? buf : me->_tcpBuf, len);
 
     me->_recv_rest -= len;
@@ -242,7 +243,7 @@ private:
   bool drawJpg() {
     JRESULT jres = _jdec.prepare(jpgRead, this);
     if (jres != JDR_OK) {
-      log_e("prepare failed! %s", jd_errors[jres]);
+      Serial.printf("prepare failed! %d\r\n", jres);
       return false;
     }
 
@@ -261,7 +262,7 @@ private:
       jres = _jdec.decomp_multitask(jpgWrite, jpgLine);
     }
     if (jres != JDR_OK) {
-      log_e("decomp failed! %s", jd_errors[jres]);
+      Serial.printf("decomp failed! %d\r\n", jres);
       return false;
     }
 

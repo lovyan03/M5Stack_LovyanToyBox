@@ -764,7 +764,7 @@ JRESULT TJpgD::prepare (
 	JRESULT rc;
 
 //	const uint16_t sz_pool = 3100;
-	const uint16_t sz_pool = 3800;
+	const uint16_t sz_pool = 2800;
 	static uint8_t pool[sz_pool];
 
 
