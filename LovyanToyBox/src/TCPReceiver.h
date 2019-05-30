@@ -69,6 +69,8 @@ public:
   }
   void close()
   {
+    _client = _tcp.available();
+    if (_client.connected()) _client.stop();
     _tcp.stop();
     _dma.close();
     _jdec.multitask_end();
@@ -76,26 +78,43 @@ public:
 
   bool loop()
   {
+    static uint16_t count = 0;
     if (!_client.connected()) {
       _client = _tcp.available();
       _recv_requested = false;
     } else {
-      if (_recv_requested) {
-        _recv_requested = false;
-        for (uint16_t retry = 1000; 2 > _client.available() && retry; --retry) delay(1);
-        if (2 == _client.read((uint8_t*)&_recv_rest, 2)) {
-          if (_recv_rest > 100) {
-            if (drawJpg()) ++_drawCount;
+      if (5 <= _client.available() && 5 == _client.read(_tcpBuf, 5)) {
+        count = 0;
+        if (_tcpBuf[0] == 'J'
+         && _tcpBuf[1] == 'P'
+         && _tcpBuf[2] == 'G') {
+          _recv_requested = false;
+          _recv_rest = _tcpBuf[3] | (_tcpBuf[4]<<8);
+          if (_recv_rest > 600) {
+            if (drawJpg()) {
+              ++_drawCount;
+            } else {
+              delay(200);
+            }
           } else {
-            Serial.println("data error");
+            Serial.println("jpg too short");
           }
+        } else {
+          Serial.println("broken data");
+          delay(10);
+          while (0 < _client.read(_tcpBuf, TCP_BUF_LEN)) delay(10);
+        }
+      } else {
+        if (++count > 1000) {
+          _recv_requested = false;
+        } else {
+          delay(1);
         }
       }
-      if (!_recv_requested) {
-        delay(10);
-        while (0 < _client.read(_tcpBuf, TCP_BUF_LEN)) delay(10);
+      if (!_recv_requested)   {
+        count = 0;
         Serial.println("data request");
-        _client.write('\n');
+        _client.println("JPG");
         _recv_requested = true;
       }
     }
@@ -162,17 +181,22 @@ private:
     TCPReceiver* me = (TCPReceiver*)jdec->device;
     WiFiClient* client = &me->_client;
     if (!client->connected()) return 0;
-
-    if (len < me->_recv_rest && (me->_recv_rest >> 1) < len) { // dataend read tweak
+/*
+    if (len == JD_SZBUF && len < me->_recv_rest && (me->_recv_rest >> 1) < len) { // dataend read tweak
       len = me->_recv_rest - len;
     }
+*/
     int necessary = (len == JD_SZBUF) ? 1 : (len < me->_recv_rest ? len : me->_recv_rest);
     for (uint16_t retry = 1000; client->available() < necessary && retry; --retry) delay(1);
     len = client->read(buf ? buf : me->_tcpBuf, len);
 
     me->_recv_rest -= len;
     if (!me->_recv_rest) {
-      client->write('\n');  // request the next image from the client
+      if (!client->available()) {
+        client->println("JPG"); // request the next image from the client
+      } else {
+        Serial.println("excessive request");
+      }
       me->_recv_requested = true;
     }
     return len;
