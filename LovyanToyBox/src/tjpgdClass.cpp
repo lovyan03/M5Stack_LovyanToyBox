@@ -261,7 +261,7 @@ static int bitext (	/* >=0: extracted data, <0: error code */
 		if (!msk) {				/* Next byte? */
 			if (!dc) {			/* No input data is available, re-fill input buffer */
 				dp = jd->inbuf;	/* Top of input buffer */
-				dc = jd->infunc(jd, dp, JD_SZBUF);
+				dc = jd->infunc(jd, dp, TJPGD_SZBUF);
 				if (!dc) return 0 - (int16_t)JDR_INP;	/* Err: read error or wrong stream termination */
 			} else {
 				dp++;			/* Next data ptr */
@@ -314,7 +314,7 @@ static int16_t huffext (	/* >=0: decoded data, <0: error code */
 		if (!msk) {		/* Next byte? */
 			if (!dc) {	/* No input data is available, re-fill input buffer */
 				dp = jd->inbuf;	/* Top of input buffer */
-				dc = jd->infunc(jd, dp, JD_SZBUF);
+				dc = jd->infunc(jd, dp, TJPGD_SZBUF);
 				if (!dc) return 0 - (int16_t)JDR_INP;	/* Err: read error or wrong stream termination */
 			} else {
 				dp++;	/* Next data ptr */
@@ -606,9 +606,6 @@ static JRESULT mcu_output (
 				*rgb24++ = /* R */ BYTECLIP(yy + (((int16_t)(1.402 * 128) * cr) >> 7));
 				*rgb24++ = /* G */ BYTECLIP(yy - (((int16_t)(0.344 * 128) * cb + (int16_t)(0.714 * 128) * cr) >> 7));
 				*rgb24++ = /* B */ BYTECLIP(yy + (((int16_t)(1.772 * 128) * cb) >> 7));
-//				*rgb24++ = /* R */ BYTECLIP(yy + (((int16_t)(1.402 * 128) * cr) >> 7));
-//				*rgb24++ = /* G */ BYTECLIP(yy - (((int16_t)(0.344 * 128) * cb + (int16_t)(0.714 * 128) * cr) >> 7));
-//				*rgb24++ = /* B */ BYTECLIP(yy + (((int16_t)(1.772 * 128) * cb) >> 7));
 			}
 		}
 
@@ -721,7 +718,7 @@ static JRESULT restart (
 	for (i = 0; i < 2; i++) {
 		if (!dc) {	/* No input data is available, re-fill input buffer */
 			dp = jd->inbuf;
-			dc = jd->infunc(jd, dp, JD_SZBUF);
+			dc = jd->infunc(jd, dp, TJPGD_SZBUF);
 			if (!dc) return JDR_INP;
 		} else {
 			dp++;
@@ -764,7 +761,7 @@ JRESULT TJpgD::prepare (
 	JRESULT rc;
 
 //	const uint16_t sz_pool = 3100;
-	const uint16_t sz_pool = 2800;
+	const uint16_t sz_pool = 3100;
 	static uint8_t pool[sz_pool];
 
 
@@ -785,7 +782,7 @@ JRESULT TJpgD::prepare (
 	}
 	for (i = 0; i < 4; this->qttbl[i++] = 0) ;
 
-	this->inbuf = seg = (uint8_t*)alloc_pool(this, JD_SZBUF);		/* Allocate stream input buffer */
+	this->inbuf = seg = (uint8_t*)alloc_pool(this, TJPGD_SZBUF);		/* Allocate stream input buffer */
 	if (!seg) return JDR_MEM1;
 
 	if (this->infunc(this, seg, 2) != 2) return JDR_INP;/* Check SOI marker */
@@ -802,7 +799,7 @@ JRESULT TJpgD::prepare (
 		ofs += 4 + len;	/* Number of bytes loaded */
 
 		/* Load segment data */
-		if (len > JD_SZBUF) return JDR_MEM2;
+		if (len > TJPGD_SZBUF) return JDR_MEM2;
 		if (this->infunc(this, seg, len) != len) return JDR_INP;
 		switch (marker & 0xFF) {
 		case 0xC0:	/* SOF0 (baseline JPEG) */
@@ -876,8 +873,8 @@ JRESULT TJpgD::prepare (
 
 			/* Pre-load the JPEG data to extract it from the bit stream */
 			this->dptr = seg; this->dctr = 0; this->dmsk = 0;	/* Prepare to read bit stream */
-			if (ofs %= JD_SZBUF) {						/* Align read offset to JD_SZBUF */
-				this->dctr = this->infunc(this, seg + ofs, (uint16_t)(JD_SZBUF - ofs));
+			if (ofs %= TJPGD_SZBUF) {						/* Align read offset to TJPGD_SZBUF */
+				this->dctr = this->infunc(this, seg + ofs, (uint16_t)(TJPGD_SZBUF - ofs));
 				this->dptr = seg + ofs - 1;
 			}
 

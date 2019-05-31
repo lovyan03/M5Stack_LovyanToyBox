@@ -58,12 +58,20 @@ namespace ScreenShotSender
                             if (0 < res)
                             {
                                 nodatacount = 0;
-                                string resMsg = Encoding.UTF8.GetString(resBytes,0, res);
-                                if (resMsg.Contains("JPG")) {
+                                if (resBytes[0] == 0x4A  // "JPG"
+                                 && resBytes[1] == 0x50
+                                 && resBytes[2] == 0x47
+                                 && resBytes[3] == 0x0A) {
                                     var tmp = _sendBuffer;
                                     ns.Write(tmp, 0, tmp.Length);
                                 }
-                            } else {
+                                else
+                                {
+                                    Console.WriteLine("unknown cmd");
+                                }
+                            }
+                            else
+                            {
                                 Thread.Sleep(1);
                                 if (++nodatacount > 1000) break;
                             }

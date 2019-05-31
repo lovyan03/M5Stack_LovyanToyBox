@@ -138,7 +138,7 @@ namespace ScreenShotSender
                 ms.WriteByte(0x4A); // prefix "JPG"
                 ms.WriteByte(0x50);
                 ms.WriteByte(0x47);
-                ms.WriteByte(0);    // data size
+                ms.WriteByte(0);
                 ms.WriteByte(0);
                 _resizeBmp.Save(ms, _jpgEncoder, _encParams);
                 rgbValues = ms.GetBuffer();
