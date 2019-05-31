@@ -135,15 +135,18 @@ namespace ScreenShotSender
             {
                 _jpgQuality = (int)nudQuality.Value;
                 _encParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, _jpgQuality);
+                ms.WriteByte(0x4A); // prefix "JPG"
+                ms.WriteByte(0x50);
+                ms.WriteByte(0x47);
                 ms.WriteByte(0);
                 ms.WriteByte(0);
                 _resizeBmp.Save(ms, _jpgEncoder, _encParams);
                 rgbValues = ms.GetBuffer();
                 if (rgbValues.Length < 65536)
                 {
-                    UInt16 len = (UInt16)(rgbValues.Length - 2);
-                    rgbValues[0] = (byte)(len & 0xFF);
-                    rgbValues[1] = (byte)((len >> 8) & 0xFF);
+                    UInt16 len = (UInt16)(rgbValues.Length - 5);
+                    rgbValues[3] = (byte)(len & 0xFF);
+                    rgbValues[4] = (byte)((len >> 8) & 0xFF);
                     _tcp.setData(rgbValues);
                 }
                 //_jpgQuality = Math.Min(90, Math.Max(0, _jpgQuality + (5000 - len) / 200));

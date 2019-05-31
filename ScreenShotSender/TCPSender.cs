@@ -1,5 +1,6 @@
 using System;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -45,16 +46,34 @@ namespace ScreenShotSender
                 {
                     var client = new TcpClient(_addr, _port);
                     var ns = client.GetStream();
-                    ns.ReadTimeout = 10000;
-                    ns.WriteTimeout = 10000;
+                    client.NoDelay = true;
+                    ns.ReadTimeout = 2000;
+                    ns.WriteTimeout = 2000;
+                    var nodatacount = 0;
                     while (!ct.IsCancellationRequested && client.Connected)
                     {
                         try
                         {
-                            if (0 < ns.Read(resBytes, 0, resBytes.Length))
+                            var res = ns.Read(resBytes, 0, resBytes.Length);
+                            if (0 < res)
                             {
-                                var tmp = _sendBuffer;
-                                ns.Write(tmp, 0, tmp.Length);
+                                nodatacount = 0;
+                                if (resBytes[0] == 0x4A  // "JPG"
+                                 && resBytes[1] == 0x50
+                                 && resBytes[2] == 0x47
+                                 && resBytes[3] == 0x0A) {
+                                    var tmp = _sendBuffer;
+                                    ns.Write(tmp, 0, tmp.Length);
+                                }
+                                else
+                                {
+                                    Console.WriteLine("unknown cmd");
+                                }
+                            }
+                            else
+                            {
+                                Thread.Sleep(1);
+                                if (++nodatacount > 1000) break;
                             }
                         }
                         catch (Exception ex)
