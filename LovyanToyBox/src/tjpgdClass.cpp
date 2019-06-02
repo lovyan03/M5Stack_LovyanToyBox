@@ -197,8 +197,7 @@ static int create_huffman_tbl (	/* 0:OK, !0:Failed */
 	uint16_t ndata				/* Size of input data */
 )
 {
-	uint16_t i, j, b, np, cls, num;
-	uint8_t d, *pb, *pd;
+	uint8_t i, j, b, np, cls, num, d, *pb, *pd;
 	uint16_t hc, *ph;
 
 
@@ -251,9 +250,8 @@ static int bitext (	/* >=0: extracted data, <0: error code */
 	int nbit		/* Number of bits to extract (1 to 11) */
 )
 {
-	uint8_t msk, s, *dp;
-	uint16_t dc, v, f;
-
+	uint8_t msk, s, f, *dp;
+	uint16_t dc, v;
 
 	msk = jd->dmsk; dc = jd->dctr; dp = jd->dptr;	/* Bit mask, number of data available, read ptr */
 	s = *dp; v = f = 0;
@@ -303,8 +301,8 @@ static int16_t huffext (	/* >=0: decoded data, <0: error code */
 	const uint8_t* hdata	/* Pointer to the data table */
 )
 {
-	uint8_t msk, s, *dp;
-	uint16_t dc, v, f, bl, nd;
+	uint8_t msk, s, f, bl, nd, *dp;
+	uint16_t dc, v;
 
 
 	msk = jd->dmsk; dc = jd->dctr; dp = jd->dptr;	/* Bit mask, number of data available, read ptr */
@@ -369,12 +367,11 @@ static void block_idct (
 	/* Process columns */
 	for (i = 0; i < 8; i++) {
 		v0 = src[8 * 0];	/* Get even elements */
-		v1 = src[8 * 2];
 		v2 = src[8 * 4];
-		v3 = src[8 * 6];
-
 		t10 = v0 + v2;		/* Process the even elements */
 		t12 = v0 - v2;
+		v1 = src[8 * 2];
+		v3 = src[8 * 6];
 		t11 = (v1 - v3) * M13 >> 12;
 		v3 += v1;
 		t11 -= v3;
@@ -394,18 +391,17 @@ static void block_idct (
 		v7 += v6;
 		v5 = (t11 - v7) * M13 >> 12;
 		v7 += t11;
+		src[8 * 0] = v0 + v7;	/* Write-back transformed values */
+		src[8 * 7] = v0 - v7;
 		t13 = (t10 + t12) * M5 >> 12;
 		v4 = t13 - (t10 * M2 >> 12);
 		v6 = t13 - (t12 * M4 >> 12) - v7;
-		v5 -= v6;
-		v4 -= v5;
-
-		src[8 * 0] = v0 + v7;	/* Write-back transformed values */
-		src[8 * 7] = v0 - v7;
 		src[8 * 1] = v1 + v6;
 		src[8 * 6] = v1 - v6;
+		v5 -= v6;
 		src[8 * 2] = v2 + v5;
 		src[8 * 5] = v2 - v5;
+		v4 -= v5;
 		src[8 * 3] = v3 + v4;
 		src[8 * 4] = v3 - v4;
 
@@ -416,12 +412,11 @@ static void block_idct (
 	src -= 8;
 	for (i = 0; i < 8; i++) {
 		v0 = src[0] + (128L << 8);	/* Get even elements (remove DC offset (-128) here) */
-		v1 = src[2];
 		v2 = src[4];
-		v3 = src[6];
-
 		t10 = v0 + v2;				/* Process the even elements */
 		t12 = v0 - v2;
+		v1 = src[2];
+		v3 = src[6];
 		t11 = (v1 - v3) * M13 >> 12;
 		v3 += v1;
 		t11 -= v3;
@@ -441,18 +436,17 @@ static void block_idct (
 		v7 += v6;
 		v5 = (t11 - v7) * M13 >> 12;
 		v7 += t11;
+		dst[0] = BYTECLIP((v0 + v7) >> 8);	/* Descale the transformed values 8 bits and output */
+		dst[7] = BYTECLIP((v0 - v7) >> 8);
 		t13 = (t10 + t12) * M5 >> 12;
 		v4 = t13 - (t10 * M2 >> 12);
 		v6 = t13 - (t12 * M4 >> 12) - v7;
-		v5 -= v6;
-		v4 -= v5;
-
-		dst[0] = BYTECLIP((v0 + v7) >> 8);	/* Descale the transformed values 8 bits and output */
-		dst[7] = BYTECLIP((v0 - v7) >> 8);
 		dst[1] = BYTECLIP((v1 + v6) >> 8);
 		dst[6] = BYTECLIP((v1 - v6) >> 8);
+		v5 -= v6;
 		dst[2] = BYTECLIP((v2 + v5) >> 8);
 		dst[5] = BYTECLIP((v2 - v5) >> 8);
+		v4 -= v5;
 		dst[3] = BYTECLIP((v3 + v4) >> 8);
 		dst[4] = BYTECLIP((v3 - v4) >> 8);
 		dst += 8;
@@ -755,12 +749,10 @@ JRESULT TJpgD::prepare (
 )
 {
 	uint8_t *seg, b;
-	uint16_t marker;
-	uint32_t ofs;
-	uint16_t n, i, j, len;
+	uint8_t marker;
+	uint16_t i, j, len;
 	JRESULT rc;
 
-//	const uint16_t sz_pool = 3100;
 	const uint16_t sz_pool = 3100;
 	static uint8_t pool[sz_pool];
 
@@ -775,36 +767,52 @@ JRESULT TJpgD::prepare (
 
 	for (i = 0; i < 2; i++) {	/* Nulls pointers */
 		for (j = 0; j < 2; j++) {
-			this->huffbits[i][j] = 0;
-			this->huffcode[i][j] = 0;
-			this->huffdata[i][j] = 0;
+			huffbits[i][j] = 0;
+			huffcode[i][j] = 0;
+			huffdata[i][j] = 0;
 		}
 	}
-	for (i = 0; i < 4; this->qttbl[i++] = 0) ;
+	for (i = 0; i < 4; qttbl[i++] = 0) ;
 
-	this->inbuf = seg = (uint8_t*)alloc_pool(this, TJPGD_SZBUF);		/* Allocate stream input buffer */
+	inbuf = seg = dptr = (uint8_t*)alloc_pool(this, TJPGD_SZBUF);		/* Allocate stream input buffer */
 	if (!seg) return JDR_MEM1;
 
-	if (this->infunc(this, seg, 2) != 2) return JDR_INP;/* Check SOI marker */
+	dctr = infunc(this, dptr, TJPGD_SZBUF);
+	seg = dptr;
+	if (dctr <= 2) return JDR_INP;/* Check SOI marker */
 	if (LDB_WORD(seg) != 0xFFD8) return JDR_FMT1;	/* Err: SOI is not detected */
-	ofs = 2;
+	dptr += 2; dctr -= 2;
 
 	for (;;) {
 		/* Get a JPEG marker */
-		if (this->infunc(this, seg, 4) != 4) return JDR_INP;
-		marker = LDB_WORD(seg);		/* Marker */
-		len = LDB_WORD(seg + 2);	/* Length field */
-		if (len <= 2 || (marker >> 8) != 0xFF) return JDR_FMT1;
+		if (dctr < 4) {
+			if (4 > (TJPGD_SZBUF - (dptr - inbuf))) return JDR_MEM2;
+			dctr += infunc(this, dptr + dctr, 4);
+			if (dctr < 4) return JDR_INP;
+		}
+		seg = dptr;
+		dptr += 4;
+		dctr -= 4;
+
+		if (*seg++ != 0xFF) return JDR_FMT1;
+		marker = *(seg++);		/* Marker */
+		len = LDB_WORD(seg);	/* Length field */
+		if (len <= 2) return JDR_FMT1;
 		len -= 2;		/* Content size excluding length field */
-		ofs += 4 + len;	/* Number of bytes loaded */
 
 		/* Load segment data */
-		if (len > TJPGD_SZBUF) return JDR_MEM2;
-		if (this->infunc(this, seg, len) != len) return JDR_INP;
-		switch (marker & 0xFF) {
+		if (dctr < len) {
+			if (len - dctr > (TJPGD_SZBUF - (dptr - inbuf))) return JDR_MEM2;
+			dctr += infunc(this, dptr + dctr, len - dctr);
+			if (dctr < len) return JDR_INP;
+		}
+		seg = dptr;
+		dptr += len;
+		dctr -= len;
+		switch (marker) {
 		case 0xC0:	/* SOF0 (baseline JPEG) */
-			this->width = LDB_WORD(seg+3);		/* Image width in unit of pixel */
-			this->height = LDB_WORD(seg+1);		/* Image height in unit of pixel */
+			width = LDB_WORD(seg+3);		/* Image width in unit of pixel */
+			height = LDB_WORD(seg+1);		/* Image height in unit of pixel */
 			if (seg[5] != 3) return JDR_FMT3;	/* Err: Supports only Y/Cb/Cr format */
 
 			/* Check three image components */
@@ -814,19 +822,19 @@ JRESULT TJpgD::prepare (
 					if (b != 0x11 && b != 0x22 && b != 0x21) {	/* Check sampling factor */
 						return JDR_FMT3;					/* Err: Supports only 4:4:4, 4:2:0 or 4:2:2 */
 					}
-					this->msx = b >> 4; this->msy = b & 15;		/* Size of MCU [blocks] */
+					msx = b >> 4; msy = b & 15;		/* Size of MCU [blocks] */
 				} else {	/* Cb/Cr component */
 					if (b != 0x11) return JDR_FMT3;			/* Err: Sampling factor of Cr/Cb must be 1 */
 				}
 				b = seg[8 + 3 * i];							/* Get dequantizer table ID for this component */
 				if (b > 3) return JDR_FMT3;					/* Err: Invalid ID */
-				this->qtid[i] = b;
+				qtid[i] = b;
 			}
 			break;
 
 		case 0xDD:	/* DRI */
 			/* Get restart interval (MCUs) */
-			this->nrst = LDB_WORD(seg);
+			nrst = LDB_WORD(seg);
 			break;
 
 		case 0xC4:	/* DHT */
@@ -842,7 +850,7 @@ JRESULT TJpgD::prepare (
 			break;
 
 		case 0xDA:	/* SOS */
-			if (!this->width || !this->height) return JDR_FMT1;	/* Err: Invalid image size */
+			if (!width || !height) return JDR_FMT1;	/* Err: Invalid image size */
 
 			if (seg[0] != 3) return JDR_FMT3;				/* Err: Supports only three color components format */
 
@@ -851,32 +859,18 @@ JRESULT TJpgD::prepare (
 				b = seg[2 + 2 * i];	/* Get huffman table ID */
 				if (b != 0x00 && b != 0x11)	return JDR_FMT3;	/* Err: Different table number for DC/AC element */
 				b = i ? 1 : 0;
-				if (!this->huffbits[b][0] || !this->huffbits[b][1]) {	/* Check dc/ac huffman table for this component */
+				if (!huffbits[b][0] || !huffbits[b][1]) {	/* Check dc/ac huffman table for this component */
 					return JDR_FMT1;					/* Err: Nnot loaded */
 				}
-				if (!this->qttbl[this->qtid[i]]) {			/* Check dequantizer table for this component */
+				if (!qttbl[qtid[i]]) {			/* Check dequantizer table for this component */
 					return JDR_FMT1;					/* Err: Not loaded */
 				}
 			}
 
 			/* Allocate working buffer for MCU and RGB */
-			n = this->msy * this->msx;						/* Number of Y blocks in the MCU */
-			if (!n) return JDR_FMT1;					/* Err: SOF0 has not been loaded */
-			len = n * 64 * 2 + 64;						/* Allocate buffer for IDCT and RGB output */
-			if (len < 256) len = 256;					/* but at least 256 byte is required for IDCT */
-//			for (int i = 0; i < 2; ++i) {
-//				this->workbufs[i] = alloc_pool(this, len);			/* and it may occupy a part of following MCU working buffer for RGB output */
-//				if (!this->workbufs[i]) return JDR_MEM1;			/* Err: not enough memory */
-//			}
-//			this->mcubuf = (uint8_t*)alloc_pool(this, (uint16_t)((n + 2) * 64));	/* Allocate MCU working buffer */
-//			if (!this->mcubuf) return JDR_MEM1;			/* Err: not enough memory */
-
-			/* Pre-load the JPEG data to extract it from the bit stream */
-			this->dptr = seg; this->dctr = 0; this->dmsk = 0;	/* Prepare to read bit stream */
-			if (ofs %= TJPGD_SZBUF) {						/* Align read offset to TJPGD_SZBUF */
-				this->dctr = this->infunc(this, seg + ofs, (uint16_t)(TJPGD_SZBUF - ofs));
-				this->dptr = seg + ofs - 1;
-			}
+			if (!msy || !msx) return JDR_FMT1;					/* Err: SOF0 has not been loaded */
+			dmsk = 0;
+			--dptr;
 
 			return JDR_OK;		/* Initialization succeeded. Ready to decompress the JPEG image. */
 

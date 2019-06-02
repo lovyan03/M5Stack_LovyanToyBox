@@ -1,6 +1,8 @@
 #ifndef _TCPRECEIVER_H_
 #define _TCPRECEIVER_H_
 
+#include <vector>
+#include <algorithm>
 #include <M5Stack.h>
 #include <M5TreeView.h>
 #include <WiFi.h>
@@ -82,8 +84,8 @@ public:
       if (_tcpBuf[0] == 'J'
        && _tcpBuf[1] == 'P'
        && _tcpBuf[2] == 'G') {
+        _recv_remain = *(uint16_t*)&_tcpBuf[3];
         _recv_requested = false;
-        _recv_remain = _tcpBuf[3] | (_tcpBuf[4]<<8);
         if (_recv_remain > 600) {
           if (drawJpg()) {
             ++_drawCount;
@@ -123,18 +125,18 @@ public:
         ++_delayCount;
       }
       if (!_recv_requested)   {
+        _recv_requested = true;
         count = 0;
         Serial.println("data request");
         _client.print("JPG\n");
-        _recv_requested = true;
       }
     }
 
     if (_sec != millis() / 1000) {
+      _sec = millis() / 1000;
       Serial.printf("%2d fps", _drawCount);
       if (_delayCount) Serial.printf(" / delay%3d", _delayCount);
       Serial.print("\r\n");
-      _sec = millis() / 1000;
       _drawCount = 0;
       _delayCount = 0;
     }
@@ -151,15 +153,15 @@ private:
   WiFiClient _client;
   DMADrawer _dma;
   TJpgD _jdec;
+  uint32_t _sec = 0;
   uint16_t _jpg_x;
   uint16_t _jpg_y;
   uint16_t _recv_remain = 0;
-  bool _recv_requested = false;
+  uint16_t _drawCount = 0;
+  uint16_t _delayCount = 0;
   uint8_t _jpg_magnify;
   uint8_t _tcpBuf[TCP_BUF_LEN];
-  uint32_t _sec = 0;
-  uint8_t _drawCount = 0;
-  uint16_t _delayCount = 0;
+  bool _recv_requested = false;
   bool _softap = false;
 
   void tcpStart(void) {
@@ -231,34 +233,32 @@ private:
     uint16_t width = jdec->width;
     uint16_t x = rect->left;
     uint16_t y = rect->top;
-    uint16_t w = rect->right + 1 - x;
-    uint16_t h = rect->bottom + 1 - y;
+    uint8_t w = rect->right + 1 - x;
+    uint8_t h = rect->bottom + 1 - y;
     uint16_t* p = me->_dma.getNextBuffer();
     uint16_t* dst;
-
     uint8_t *data = (uint8_t*)bitmap;
-    uint8_t magnify = me->_jpg_magnify;
     uint8_t line;
-    uint8_t ww = w;
-    uint8_t hh = h;
-    uint8_t yy = 0;
 
-    if (!magnify) {
-      while (hh--) {
-        line = ww;
-        dst = p + x + width * yy;
+    if (!me->_jpg_magnify) {
+      p += x;
+      while (h--) {
+        dst = p;
+        line = w;
         while (line--) {
           *dst++ = dmaColor(data[0], data[1], data[2]);
           data += 3;
         }
-        ++yy;
+        p += width;
       }
     } else {
+      uint8_t yy = 0;
       uint16_t addy = width << 1;
       uint8_t r, g, b;
-      while (hh--) {
-        line = ww;
-        dst = p + ((x + addy * yy) << 1);
+      p += x << 1;
+      while (h--) {
+        dst = p + ((addy * yy) << 1);
+        line = w;
         while (line--) {
           r = *data++;
           g = *data++;
@@ -290,6 +290,8 @@ private:
 
   uint32_t _ms = 0;
 
+  std::vector<uint32_t> msec1, msec2, msec3;
+
   bool drawJpg() {
 uint32_t ms1 = micros();
     JRESULT jres = _jdec.prepare(jpgRead, this);
@@ -319,9 +321,24 @@ uint32_t ms3 = micros();
       return false;
     }
 if (M5.BtnC.isPressed()) {
-Serial.printf("micros: %d:%d:%d\r\n", ms2 - ms1, ms3 - ms2, ms1 - _ms);
+//Serial.printf("micros: %d:%d:%d\r\n", ms2 - ms1, ms3 - ms2, ms1 - _ms);
+  msec1.push_back(ms2 - ms1);
+  msec2.push_back(ms3 - ms2);
+  msec3.push_back(ms1 - _ms);
+  if (msec1.size() == 31) {
+    std::nth_element(msec1.begin(), msec1.begin() + 15, msec1.end());
+    std::nth_element(msec2.begin(), msec2.begin() + 15, msec2.end());
+    std::nth_element(msec3.begin(), msec3.begin() + 15, msec3.end());
+    Serial.printf( "micros: %d:%d:%d\r\n"
+                 , msec1[5]
+                 , msec2[5]
+                 , msec3[5]);
+    msec1.clear();
+    msec2.clear();
+    msec3.clear();
+  }
 }
-_ms = ms3;
+_ms = micros();
     return true;
   }
 };
