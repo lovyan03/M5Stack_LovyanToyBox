@@ -1,6 +1,8 @@
 #ifndef _TCPRECEIVER_H_
 #define _TCPRECEIVER_H_
 
+#pragma GCC optimize ("O3")
+
 #include <vector>
 #include <algorithm>
 #include <M5Stack.h>

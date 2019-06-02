@@ -22,6 +22,8 @@
 / May 29, 2019 Tweak for ArduinoESP32
 /----------------------------------------------------------------------------*/
 
+#pragma GCC optimize ("O3")
+
 #include "tjpgdClass.h"
 
 #include <arduino.h>
@@ -468,8 +470,8 @@ static JRESULT mcu_load (
 	int32_t* tmp	/* Block working buffer for de-quantize and IDCT */
 )
 {
-	int b, d, e;
-	uint16_t blk, nby, nbc, i, z, id, cmp;
+	int16_t b, d, e;
+	uint8_t blk, nby, nbc, i, z, id, cmp;
 	const uint8_t *hb, *hd;
 	const uint16_t *hc;
 	const int32_t *dqf;
