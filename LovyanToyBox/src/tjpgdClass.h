@@ -54,6 +54,7 @@ struct TJpgD {
 	uint8_t* inbuf;				/* Bit stream input buffer */
 	uint8_t dmsk;				/* Current bit in the current read byte */
 	uint8_t scale;				/* Output scaling ratio */
+	uint8_t bayer;				/* Output bayer gain */
 	uint8_t msx, msy;			/* MCU size in unit of block (width, height) */
 	uint8_t qtid[3];			/* Quantization table ID of each component */
 	int16_t dcv[3];				/* Previous DC element of each component */
@@ -70,8 +71,8 @@ struct TJpgD {
 
 
 	JRESULT prepare (uint16_t(*)(TJpgD*,uint8_t*,uint16_t), void*);
-	JRESULT decomp (uint16_t(*)(TJpgD*,void*,JRECT*), uint16_t(*)(TJpgD*,uint16_t,uint8_t) = 0, uint8_t = 0);
-	JRESULT decomp_multitask (uint16_t(*)(TJpgD*,void*,JRECT*), uint16_t(*)(TJpgD*,uint16_t,uint8_t) = 0, uint8_t = 0);
+	JRESULT decomp (uint16_t(*)(TJpgD*,void*,JRECT*), uint16_t(*)(TJpgD*,uint16_t,uint8_t) = 0, uint8_t = 0, uint8_t = 0);
+	JRESULT decomp_multitask (uint16_t(*)(TJpgD*,void*,JRECT*), uint16_t(*)(TJpgD*,uint16_t,uint8_t) = 0, uint8_t = 0, uint8_t = 0);
 	static void multitask_begin ();
 	static void multitask_end ();
 };

@@ -65,6 +65,24 @@ static const uint16_t Ipsf[64] = {	/* See also aa_idct.png */
 
 
 /*---------------------------------------------*/
+/* Output bayer pattern table                  */
+/*---------------------------------------------*/
+
+static const int8_t Bayer[4][16] = {
+	{ 0, 4, 1, 5,-2, 2,-1, 3, 1, 5, 0, 4,-1, 3,-2, 2},
+	{ 2,-2, 3,-1, 0, 4, 1, 5, 3,-1, 2,-2, 1, 5, 0, 4},
+	{ 4, 0, 5, 1, 2,-2, 3,-1, 5, 1, 4, 0, 3,-1, 2,-2},
+	{-2, 2,-1, 3, 4, 0, 5, 1,-1, 3,-2, 2, 5, 1, 4, 0}
+};
+/*
+//	{ 1, 9, 3,11,13, 5,-1, 7, 4,12, 2,10, 0, 8,-2, 6}
+	{ 5,13, 7,-1, 1, 9, 3,11, 8, 0, 6,-2, 4,12, 2,10},
+	{ 9, 1,11, 3, 5,13, 7,-1,12, 4,10, 2, 8, 0, 6,-2},
+	{13, 5,-1, 7, 9, 1,11, 3, 0, 8,-2, 6,12, 4,10, 2},
+*/
+
+
+/*---------------------------------------------*/
 /* Conversion table for fast clipping process  */
 /*---------------------------------------------*/
 
@@ -247,9 +265,9 @@ static int create_huffman_tbl (	/* 0:OK, !0:Failed */
 /* Extract N bits from input stream                                      */
 /*-----------------------------------------------------------------------*/
 
-static int bitext (	/* >=0: extracted data, <0: error code */
+static int16_t bitext (	/* >=0: extracted data, <0: error code */
 	TJpgD* jd,		/* Pointer to the decompressor object */
-	int nbit		/* Number of bits to extract (1 to 11) */
+	int16_t nbit		/* Number of bits to extract (1 to 11) */
 )
 {
 	uint8_t msk, s, f, *dp;
@@ -286,7 +304,7 @@ static int bitext (	/* >=0: extracted data, <0: error code */
 	} while (nbit);
 	jd->dmsk = msk; jd->dctr = dc; jd->dptr = dp;
 
-	return (int)v;
+	return v;
 }
 
 
@@ -364,31 +382,31 @@ static void block_idct (
 	const int32_t M13 = (int32_t)(1.41421*4096), M2 = (int32_t)(1.08239*4096), M4 = (int32_t)(2.61313*4096), M5 = (int32_t)(1.84776*4096);
 	int32_t v0, v1, v2, v3, v4, v5, v6, v7;
 	int32_t t10, t11, t12, t13;
-	uint16_t i;
+	int32_t z3;
+	uint8_t i;
 
 	/* Process columns */
-	for (i = 0; i < 8; i++) {
+	for (i = 8; i; i--) {
 		v0 = src[8 * 0];	/* Get even elements */
 		v2 = src[8 * 4];
 		t10 = v0 + v2;		/* Process the even elements */
 		t12 = v0 - v2;
 		v1 = src[8 * 2];
-		v3 = src[8 * 6];
-		t11 = (v1 - v3) * M13 >> 12;
-		v3 += v1;
-		t11 -= v3;
-		v0 = t10 + v3;
-		v3 = t10 - v3;
+		z3 = src[8 * 6];
+		t11 = (v1 - z3) * M13 >> 12;
+		z3 += v1;
+		v0 = t10 + z3;
+		v3 = t10 - z3;
+		t11 -= z3;
 		v1 = t11 + t12;
 		v2 = t12 - t11;
 
 		v4 = src[8 * 7];	/* Get odd elements */
 		v5 = src[8 * 1];
-		v6 = src[8 * 5];
-		v7 = src[8 * 3];
-
 		t10 = v5 - v4;		/* Process the odd elements */
 		t11 = v5 + v4;
+		v6 = src[8 * 5];
+		v7 = src[8 * 3];
 		t12 = v6 - v7;
 		v7 += v6;
 		v5 = (t11 - v7) * M13 >> 12;
@@ -412,28 +430,27 @@ static void block_idct (
 
 	/* Process rows */
 	src -= 8;
-	for (i = 0; i < 8; i++) {
+	for (i = 8; i; i--) {
 		v0 = src[0] + (128L << 8);	/* Get even elements (remove DC offset (-128) here) */
 		v2 = src[4];
 		t10 = v0 + v2;				/* Process the even elements */
 		t12 = v0 - v2;
 		v1 = src[2];
-		v3 = src[6];
-		t11 = (v1 - v3) * M13 >> 12;
-		v3 += v1;
-		t11 -= v3;
-		v0 = t10 + v3;
-		v3 = t10 - v3;
+		z3 = src[6];
+		t11 = (v1 - z3) * M13 >> 12;
+		z3 += v1;
+		v0 = t10 + z3;
+		v3 = t10 - z3;
+		t11 -= z3;
 		v1 = t11 + t12;
 		v2 = t12 - t11;
 
 		v4 = src[7];				/* Get odd elements */
 		v5 = src[1];
-		v6 = src[5];
-		v7 = src[3];
-
 		t10 = v5 - v4;				/* Process the odd elements */
 		t11 = v5 + v4;
+		v6 = src[5];
+		v7 = src[3];
 		t12 = v6 - v7;
 		v7 += v6;
 		v5 = (t11 - v7) * M13 >> 12;
@@ -578,30 +595,62 @@ static JRESULT mcu_output (
 
 		/* Build an RGB MCU from discrete comopnents */
 		rgb24 = workbuf;
-		for (iy = 0; iy < my; iy++) {
-			pc = mcubuf;
-			py = pc + iy * 8;
-			if (my == 16) {		/* Double block height? */
-				pc += 64 * 4 + (iy >> 1) * 8;
-				if (iy >= 8) py += 64;
-			} else {			/* Single block height */
-				pc += mx * 8 + iy * 8;
-			}
-			for (ix = 0; ix < mx; ix++) {
-				cb = pc[0] - 128; 	/* Get Cb/Cr component and restore right level */
-				cr = pc[64] - 128;
-				if (mx == 16) {					/* Double block width? */
-					if (ix == 8) py += 64 - 8;	/* Jump to next block if double block heigt */
-					pc += ix & 1;				/* Increase chroma pointer every two pixels */
-				} else {						/* Single block width */
-					pc++;						/* Increase chroma pointer every pixel */
+		if (jd->bayer) {
+			const int8_t* btbase = Bayer[jd->bayer - 1];
+			const int8_t* btbl;
+			for (iy = 0; iy < my; iy++) {
+				btbl = btbase + ((iy & 3) << 2);
+				pc = mcubuf;
+				py = pc + iy * 8;
+				if (my == 16) {		/* Double block height? */
+					pc += 64 * 4 + (iy >> 1) * 8;
+					if (iy >= 8) py += 64;
+				} else {			/* Single block height */
+					pc += mx * 8 + iy * 8;
 				}
-				yy = *py++;			/* Get Y component */
+				for (ix = 0; ix < mx; ix++) {
+					cb = pc[0] - 128; 	/* Get Cb/Cr component and restore right level */
+					cr = pc[64] - 128;
+					if (mx == 16) {					/* Double block width? */
+						if (ix == 8) py += 64 - 8;	/* Jump to next block if double block heigt */
+						pc += ix & 1;				/* Increase chroma pointer every two pixels */
+					} else {						/* Single block width */
+						pc++;						/* Increase chroma pointer every pixel */
+					}
+					yy = btbl[ix & 3] + *py++;			/* Get Y component */
 
-				/* Convert YCbCr to RGB */
-				*rgb24++ = /* R */ BYTECLIP(yy + (((int16_t)(1.402 * 128) * cr) >> 7));
-				*rgb24++ = /* G */ BYTECLIP(yy - (((int16_t)(0.344 * 128) * cb + (int16_t)(0.714 * 128) * cr) >> 7));
-				*rgb24++ = /* B */ BYTECLIP(yy + (((int16_t)(1.772 * 128) * cb) >> 7));
+					/* Convert YCbCr to RGB */
+					*rgb24++ = /* R */ BYTECLIP(yy + (((int16_t)(1.402 * 128) * cr) >> 7));
+					*rgb24++ = /* G */ BYTECLIP(yy - (((int16_t)(0.344 * 128) * cb + (int16_t)(0.714 * 128) * cr) >> 7));
+					*rgb24++ = /* B */ BYTECLIP(yy + (((int16_t)(1.772 * 128) * cb) >> 7));
+				}
+			}
+		} else {
+			for (iy = 0; iy < my; iy++) {
+				pc = mcubuf;
+				py = pc + iy * 8;
+				if (my == 16) {		/* Double block height? */
+					pc += 64 * 4 + (iy >> 1) * 8;
+					if (iy >= 8) py += 64;
+				} else {			/* Single block height */
+					pc += mx * 8 + iy * 8;
+				}
+				for (ix = 0; ix < mx; ix++) {
+					cb = pc[0] - 128; 	/* Get Cb/Cr component and restore right level */
+					cr = pc[64] - 128;
+					if (mx == 16) {					/* Double block width? */
+						if (ix == 8) py += 64 - 8;	/* Jump to next block if double block heigt */
+						pc += ix & 1;				/* Increase chroma pointer every two pixels */
+					} else {						/* Single block width */
+						pc++;						/* Increase chroma pointer every pixel */
+					}
+					yy = *py++;			/* Get Y component */
+
+					/* Convert YCbCr to RGB */
+					*rgb24++ = /* R */ BYTECLIP(yy + (((int16_t)(1.402 * 128) * cr) >> 7));
+					*rgb24++ = /* G */ BYTECLIP(yy - (((int16_t)(0.344 * 128) * cb + (int16_t)(0.714 * 128) * cr) >> 7));
+					*rgb24++ = /* B */ BYTECLIP(yy + (((int16_t)(1.772 * 128) * cb) >> 7));
+				}
 			}
 		}
 
@@ -907,7 +956,8 @@ JRESULT TJpgD::prepare (
 JRESULT TJpgD::decomp (
 	uint16_t (*outfunc)(TJpgD*, void*, JRECT*),	/* RGB output function */
 	uint16_t (*linefunc)(TJpgD*,uint16_t,uint8_t),
-	uint8_t scale							/* Output de-scaling factor (0 to 3) */
+	uint8_t scale,							/* Output de-scaling factor (0 to 3) */
+	uint8_t bayer							/* Output bayer gain */
 )
 {
 	uint16_t x, y, mx, my;
@@ -918,6 +968,7 @@ JRESULT TJpgD::decomp (
 
 	if (scale > (JD_USE_SCALE ? 3 : 0)) return JDR_PAR;
 	this->scale = scale;
+	this->bayer = bayer ? (this->bayer % 4) + 1 : 0;
 
 	mx = msx * 8; my = msy * 8;			/* Size of the MCU (pixel) */
 
@@ -973,7 +1024,7 @@ static void task_output(void* arg)
 //Serial.println("task work");
 		mcu_output(p->jd, p->mcubuf, p->workbuf, p->outfunc, p->x, p->y);
 		p->queue = false;
-	}
+		}
 	vSemaphoreDelete(p->sem);
 //Serial.println("task_output end");
 	vTaskDelete(NULL);
@@ -984,7 +1035,7 @@ void TJpgD::multitask_begin ()
 	param.queue = true;
 	param.sem = xSemaphoreCreateBinary();
 
-	xTaskCreatePinnedToCore(task_output, "task_output", 1024, &param, 2, &param.task, 0);
+	xTaskCreatePinnedToCore(task_output, "task_output", 1024, &param, 1, &param.task, 0);
 }
 
 void TJpgD::multitask_end ()
@@ -996,7 +1047,8 @@ void TJpgD::multitask_end ()
 JRESULT TJpgD::decomp_multitask (
 	uint16_t (*outfunc)(TJpgD*, void*, JRECT*),	/* RGB output function */
 	uint16_t (*linefunc)(TJpgD*,uint16_t,uint8_t),
-	uint8_t scale							/* Output de-scaling factor (0 to 3) */
+	uint8_t scale,							/* Output de-scaling factor (0 to 3) */
+	uint8_t bayer							/* Output bayer gain */
 )
 {
 	uint16_t x, y, mx, my;
@@ -1007,6 +1059,7 @@ JRESULT TJpgD::decomp_multitask (
 
 	if (scale > (JD_USE_SCALE ? 3 : 0)) return JDR_PAR;
 	this->scale = scale;
+	this->bayer = bayer ? (this->bayer % 4) + 1 : 0;
 
 	param.jd = this;
 	param.outfunc = outfunc;

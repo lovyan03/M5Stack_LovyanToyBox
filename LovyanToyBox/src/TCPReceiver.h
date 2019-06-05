@@ -95,8 +95,8 @@ public:
         } else {
           Serial.println("jpg too short");
         }
-        if (_recv_remain) {  // remove remain data
-          Serial.println("clear remain data");
+        if (_recv_remain) {
+          Serial.printf("clear remain data:%d\r\n", _recv_remain);
           int r;
           for (uint16_t retry = 1000; retry; --retry) {
             r = _client.read(_tcpBuf, _recv_remain < TCP_BUF_LEN ? _recv_remain : TCP_BUF_LEN);
@@ -127,6 +127,7 @@ public:
         ++_delayCount;
       }
       if (!_recv_requested)   {
+        while (0 < _client.read(_tcpBuf, TCP_BUF_LEN));
         _recv_requested = true;
         count = 0;
         Serial.println("data request");
@@ -198,36 +199,47 @@ private:
   static uint16_t jpgRead(TJpgD *jdec, uint8_t *buf, uint16_t len) {
     TCPReceiver* me = (TCPReceiver*)jdec->device;
     WiFiClient* client = &me->_client;
-    if (!client->connected()) return 0;
     uint16_t retry;
-
-    int necessary = (len == TJPGD_SZBUF) ? 1 : (len < me->_recv_remain ? len : me->_recv_remain);
-
-    if (len == TJPGD_SZBUF && me->_recv_remain < TJPGD_SZBUF*2 && len < me->_recv_remain) { // dataend read tweak
-      len = me->_recv_remain - len;
+    if (!client->connected()) {
+      Serial.println("jpgRead fail: disconnected.");
+      return 0;
     }
 
-    for (retry = 1000; client->available() < necessary && retry; --retry) {
-      delay(1);
-      ++me->_delayCount;
+    if (len == TJPGD_SZBUF) {
+      if (me->_recv_remain < TJPGD_SZBUF*2 && TJPGD_SZBUF < me->_recv_remain) { // dataend read tweak
+        len = me->_recv_remain - len;
+      }
+    } else if (client->available() < len) {
+      for (retry = 1000; client->available() < len && retry; --retry) {
+        delay(1);
+        ++me->_delayCount;
+      }
     }
-//if (retry != 1000) Serial.printf("jpgRead wait %d\r\n", 1000 - retry);
 
     int l = client->read(buf ? buf : me->_tcpBuf, len);
-    if (l <= 0) return 0;
-    len = l;
-    me->_recv_remain -= len;
+    if (l <= 0) {
+      for (retry = 1000; retry; --retry) {
+        delay(1);
+        ++me->_delayCount;
+        l = client->read(buf ? buf : me->_tcpBuf, len);
+        if (l > 0) break;
+      }
+    }
+    if (l <= 0) {
+      Serial.printf("jpgRead error:%d:%d:%d\r\n", l, len, client->available());
+      return 0;
+    }
+    me->_recv_remain -= l;
     if (!me->_recv_requested && me->_recv_remain < 3) {
       if (me->_recv_remain >= client->available()) {
         client->print("JPG\n"); // request the next image from the client
         me->_recv_requested = true;
-//Serial.printf("prerequest %d \r\n", len);
       } else {
         Serial.println("excessive request");
         me->_recv_requested = true;
       }
     }
-    return len;
+    return l;
   }
 
   static uint16_t jpgWrite(TJpgD *jdec, void *bitmap, JRECT *rect) {
@@ -266,10 +278,10 @@ private:
           g = *data++;
           b = *data++;
           *dst++ = dmaColor(r,  g,  b);
-          *dst-- = dmaColor(BYTECLIP(r + 4), BYTECLIP(g + 2), BYTECLIP(b + 4));
+          *dst-- = dmaColor(BYTECLIP(r + 4), BYTECLIP(g + 4), BYTECLIP(b + 4));
           dst += addy;
-          *dst++ = dmaColor(BYTECLIP(r + 6), BYTECLIP(g + 3), BYTECLIP(b + 6));
-          *dst++ = dmaColor(BYTECLIP(r + 2), BYTECLIP(g + 1), BYTECLIP(b + 2));
+          *dst++ = dmaColor(BYTECLIP(r + 6), BYTECLIP(g + 6), BYTECLIP(b + 6));
+          *dst++ = dmaColor(BYTECLIP(r + 2), BYTECLIP(g + 2), BYTECLIP(b + 2));
           dst -= addy;
         }
         ++yy;
@@ -290,57 +302,61 @@ private:
     return 1;
   }
 
-  uint32_t _ms = 0;
 
-  std::vector<uint32_t> msec1, msec2, msec3;
+  uint32_t _micros0 = 0;
+  std::vector<uint32_t> micros1, micros2, micros3;
 
   bool drawJpg() {
-uint32_t ms1 = micros();
+    uint32_t ms1 = micros();
     JRESULT jres = _jdec.prepare(jpgRead, this);
     if (jres != JDR_OK) {
       Serial.printf("prepare failed! %d\r\n", jres);
       return false;
     }
-uint32_t ms2 = micros();
+    uint32_t ms2 = micros();
 
+    static uint8_t bayer;
     if (_jdec.width > 160 || _jdec.height > 120) {
       _jpg_magnify = 0;
+      bayer = 1;
       _jpg_x = 160 - _jdec.width/2;
       _jpg_y = 120 - _jdec.height/2;
     } else {
       _jpg_magnify = 1;
+      bayer = 0;
       _jpg_x = 160 - _jdec.width;
       _jpg_y = 120 - _jdec.height;
     }
     if (M5.BtnC.isPressed()) {  // DEBUG
-      jres = _jdec.decomp(jpgWrite, jpgLine);
+      jres = _jdec.decomp(jpgWrite, jpgLine, 0, bayer);
     } else {
-      jres = _jdec.decomp_multitask(jpgWrite, jpgLine);
+      jres = _jdec.decomp_multitask(jpgWrite, jpgLine, 0, bayer);
     }
-uint32_t ms3 = micros();
+    uint32_t ms3 = micros();
     if (jres != JDR_OK) {
       Serial.printf("decomp failed! %d\r\n", jres);
       return false;
     }
-if (M5.BtnC.isPressed()) {
-//Serial.printf("micros: %d:%d:%d\r\n", ms2 - ms1, ms3 - ms2, ms1 - _ms);
-  msec1.push_back(ms2 - ms1);
-  msec2.push_back(ms3 - ms2);
-  msec3.push_back(ms1 - _ms);
-  if (msec1.size() == 31) {
-    std::nth_element(msec1.begin(), msec1.begin() + 15, msec1.end());
-    std::nth_element(msec2.begin(), msec2.begin() + 15, msec2.end());
-    std::nth_element(msec3.begin(), msec3.begin() + 15, msec3.end());
-    Serial.printf( "micros: %d:%d:%d\r\n"
-                 , msec1[5]
-                 , msec2[5]
-                 , msec3[5]);
-    msec1.clear();
-    msec2.clear();
-    msec3.clear();
-  }
-}
-_ms = micros();
+
+    if (M5.BtnC.isPressed()) {
+    //Serial.printf("micros: %d:%d:%d\r\n", ms2 - ms1, ms3 - ms2, ms1 - _ms);
+      micros1.push_back(ms2 - ms1);
+      micros2.push_back(ms3 - ms2);
+      micros3.push_back(ms1 - _micros0);
+      if (micros1.size() == 31) {
+        std::nth_element(micros1.begin(), micros1.begin() + 15, micros1.end());
+        std::nth_element(micros2.begin(), micros2.begin() + 15, micros2.end());
+        std::nth_element(micros3.begin(), micros3.begin() + 15, micros3.end());
+        Serial.printf( "micros: %d:%d:%d\r\n"
+                     , micros1[15]
+                     , micros2[15]
+                     , micros3[15]);
+        micros1.clear();
+        micros2.clear();
+        micros3.clear();
+      }
+    }
+    _micros0 = micros();
     return true;
   }
 };

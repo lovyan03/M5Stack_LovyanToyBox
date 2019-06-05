@@ -1,4 +1,6 @@
 
+#pragma GCC optimize ("O3")
+
 #include "DMADrawer.h"
 
 #include <M5Stack.h>
