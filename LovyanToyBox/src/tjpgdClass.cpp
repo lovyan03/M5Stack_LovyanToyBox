@@ -1000,14 +1000,18 @@ JRESULT TJpgD::decomp (
 
 
 typedef struct {
+	uint8_t* mcubuf = NULL;
+	uint8_t* workbuf = NULL;
+	uint16_t x = 0;
+	uint16_t y = 0;
+	volatile bool queue = false;
+} queue_t;
+
+typedef struct {
 	TJpgD* jd;
-	uint8_t* mcubuf;
-	uint8_t* workbuf;
 	uint16_t (*outfunc)(TJpgD*, void*, JRECT*);
-	uint16_t x;
-	uint16_t y;
-	volatile bool queue;
-	SemaphoreHandle_t sem;
+	volatile bool enabled;
+	QueueHandle_t sem;
 	TaskHandle_t task;
 } param_task_output;
 static param_task_output param;
@@ -1015,33 +1019,34 @@ static param_task_output param;
 static void task_output(void* arg)
 {
 	param_task_output* p = (param_task_output*)arg;
+	queue_t* q;
 //Serial.println("task_output start");
-	p->queue = false;
-	for (;;) {
-//Serial.println("task");
-		if (!xSemaphoreTake(p->sem, -1)) continue;
-		if (!p->queue) break;
-//Serial.println("task work");
-		mcu_output(p->jd, p->mcubuf, p->workbuf, p->outfunc, p->x, p->y);
-		p->queue = false;
+	while (p->enabled) {
+		if (!xQueueReceive(p->sem, &q, -1)) continue;
+		if (q && q->queue) {
+//Serial.printf("task work: X=%d,Y=%d\r\n",q->x,q->y);
+			mcu_output(p->jd, q->mcubuf, q->workbuf, p->outfunc, q->x, q->y);
+			q->queue = false;
+//Serial.println("task work done");
 		}
-	vSemaphoreDelete(p->sem);
+	}
+	vQueueDelete(p->sem);
 //Serial.println("task_output end");
 	vTaskDelete(NULL);
 }
 
 void TJpgD::multitask_begin ()
 {
-	param.queue = true;
-	param.sem = xSemaphoreCreateBinary();
+	param.enabled = true;
+	param.sem = xQueueCreate(2, sizeof(queue_t*));
 
 	xTaskCreatePinnedToCore(task_output, "task_output", 1024, &param, 1, &param.task, 0);
 }
 
 void TJpgD::multitask_end ()
 {
-	param.queue = false;
-	xSemaphoreGive(param.sem);
+	param.enabled = false;
+	xQueueSend(param.sem, NULL, portMAX_DELAY);
 }
 
 JRESULT TJpgD::decomp_multitask (
@@ -1054,8 +1059,10 @@ JRESULT TJpgD::decomp_multitask (
 	uint16_t x, y, mx, my;
 	uint16_t rst, rsc;
 	JRESULT rc;
-	uint8_t workbufs[2][768];
-	uint8_t mcubufs[2][384];
+	uint8_t workbufs[3][768];
+	uint8_t mcubufs[3][384];
+	queue_t qs[2];
+	uint8_t flip = 0;
 
 	if (scale > (JD_USE_SCALE ? 3 : 0)) return JDR_PAR;
 	this->scale = scale;
@@ -1065,11 +1072,12 @@ JRESULT TJpgD::decomp_multitask (
 	param.outfunc = outfunc;
 
 	mx = msx * 8; my = msy * 8;			/* Size of the MCU (pixel) */
-	uint8_t flip = 0;
+	uint8_t bufidx = 0;
 
 	dcv[2] = dcv[1] = dcv[0] = 0;	/* Initialize DC values */
 	rst = rsc = 0;
 	uint16_t lastx = ((width - 1) / mx - 1) * mx;
+	queue_t* q = qs;
 
 	rc = JDR_OK;
 	for (y = 0; y < height; y += my) {		/* Vertical loop of MCUs */
@@ -1079,25 +1087,27 @@ JRESULT TJpgD::decomp_multitask (
 				if (rc != JDR_OK) break;
 				rst = 1;
 			}
-			rc = mcu_load(this, mcubufs[flip], (int32_t*)workbufs[flip]);					/* Load an MCU (decompress huffman coded stream and apply IDCT) */
+			rc = mcu_load(this, mcubufs[bufidx], (int32_t*)workbufs[bufidx]);
 			if (rc != JDR_OK) break;
-			if ((!param.queue) && (x < (lastx + (y != 0)))) {
-//mcubufs[flip][0] = 0;
-//mcubufs[flip][1] = 0;
-				param.x = x;
-				param.y = y;
-				param.mcubuf  = mcubufs[flip];
-				param.workbuf = (uint8_t*)workbufs[flip];
-				param.queue = true;
-				xSemaphoreGive(param.sem);
+			if ((!q->queue) && (x < lastx)) {
+//mcubufs[bufidx][0] = 0;
+//mcubufs[bufidx][1] = 0;
+				q->x = x;
+				q->y = y;
+				q->mcubuf  = mcubufs[bufidx];
+				q->workbuf = workbufs[bufidx];
+				q->queue = true;
+				xQueueSend(param.sem, &q, 0);
+				bufidx = (1 + bufidx) % 3;
 				flip = !flip;
+				q = &qs[flip];
 			} else {
-//mcubufs[flip][0] = 0xFF;
-//mcubufs[flip][1] = 0xFF;
-				rc = mcu_output(this, mcubufs[flip], (uint8_t*)workbufs[flip], outfunc, x, y);	/* Output the MCU (color space conversion, scaling and output) */
+//mcubufs[bufidx][0] = 0xFF;
+//mcubufs[bufidx][1] = 0xFF;
+				rc = mcu_output(this, mcubufs[bufidx], workbufs[bufidx], outfunc, x, y);	/* Output the MCU (color space conversion, scaling and output) */
 			}
 		}
-		while (param.queue) taskYIELD();
+		while (qs[0].queue || qs[1].queue) taskYIELD();
 		if (rc != JDR_OK) break;
 		if (linefunc) linefunc(this, y, (height < y + my) ? height - y : my);
 	}
