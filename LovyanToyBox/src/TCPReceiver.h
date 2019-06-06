@@ -256,6 +256,7 @@ private:
 
     if (!me->_jpg_magnify) {
       p += x;
+      if (y & 0x10) p += width * 16;
       while (h--) {
         dst = p;
         line = w;
@@ -294,6 +295,14 @@ private:
   static uint16_t jpgLine(TJpgD *jdec, uint16_t y, uint8_t h) {
     TCPReceiver* me = (TCPReceiver*)jdec->device;
     uint8_t magnify = me->_jpg_magnify;
+    if (!magnify) {
+      if (y & 0x10) {
+        y -= 16;
+        h += 16;
+      } else if (h + y < jdec->height) {
+        return 1;
+      }
+    }
     me->_dma.draw( me->_jpg_x
                  , me->_jpg_y + (y << magnify)
                  , jdec->width << magnify
@@ -315,22 +324,25 @@ private:
     }
     uint32_t ms2 = micros();
 
-    static uint8_t bayer;
+    uint8_t bayer;
+    uint8_t lineskip;
     if (_jdec.width > 160 || _jdec.height > 120) {
       _jpg_magnify = 0;
       bayer = 1;
+      lineskip = 1;
       _jpg_x = 160 - _jdec.width/2;
       _jpg_y = 120 - _jdec.height/2;
     } else {
       _jpg_magnify = 1;
       bayer = 0;
+      lineskip = 0;
       _jpg_x = 160 - _jdec.width;
       _jpg_y = 120 - _jdec.height;
     }
     if (M5.BtnC.isPressed()) {  // DEBUG
-      jres = _jdec.decomp(jpgWrite, jpgLine, 0, bayer);
+      jres = _jdec.decomp(jpgWrite, jpgLine, 0, bayer, lineskip);
     } else {
-      jres = _jdec.decomp_multitask(jpgWrite, jpgLine, 0, bayer);
+      jres = _jdec.decomp_multitask(jpgWrite, jpgLine, 0, bayer, lineskip);
     }
     uint32_t ms3 = micros();
     if (jres != JDR_OK) {
