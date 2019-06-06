@@ -1046,7 +1046,9 @@ void TJpgD::multitask_begin ()
 void TJpgD::multitask_end ()
 {
 	param.enabled = false;
-	xQueueSend(param.sem, NULL, portMAX_DELAY);
+	queue_t* q = NULL;
+	xQueueSend(param.sem, &q, 0);
+	delay(10);
 }
 
 JRESULT TJpgD::decomp_multitask (
