@@ -1002,7 +1002,6 @@ JRESULT TJpgD::decomp (
 
 typedef struct {
 	uint8_t* mcubuf = NULL;
-	uint8_t* workbuf = NULL;
 	uint16_t x = 0;
 	uint16_t y = 0;
 	uint8_t h = 0;
@@ -1018,15 +1017,17 @@ typedef struct {
 	TaskHandle_t task;
 } param_task_output;
 
+static const uint8_t queue_max = 16;
 static param_task_output param;
-static uint8_t workbufs[3][768];
-static uint8_t mcubufs[3][384];
-static queue_t qwrites[2];
+static uint8_t mcubufs[queue_max + 1][384];
+static queue_t qwrites[queue_max];
 static queue_t qline;
 static uint8_t qidx = 0;
+static uint8_t mcuidx = 0;
 
 static void task_output(void* arg)
 {
+	uint8_t workbuf[768];
 	param_task_output* p = (param_task_output*)arg;
 	queue_t* q;
 //Serial.println("task_output start");
@@ -1035,7 +1036,7 @@ static void task_output(void* arg)
 		if (q && q->queue) {
 //Serial.printf("task work: X=%d,Y=%d\r\n",q->x,q->y);
 			if (q->h == 0) {
-				mcu_output(p->jd, q->mcubuf, q->workbuf, p->outfunc, q->x, q->y);
+				mcu_output(p->jd, q->mcubuf, workbuf, p->outfunc, q->x, q->y);
 			} else {
 				p->linefunc(p->jd, q->y, q->h);
 			}
@@ -1051,17 +1052,14 @@ static void task_output(void* arg)
 void TJpgD::multitask_begin ()
 {
 	param.enabled = true;
-	param.sem = xQueueCreate(3, sizeof(queue_t*));
+	param.sem = xQueueCreate(queue_max + 1, sizeof(queue_t*));
 
-	xTaskCreatePinnedToCore(task_output, "task_output", 1024, &param, 1, &param.task, 0);
-
-	qwrites[0].h = qwrites[1].h = 0;
+	xTaskCreatePinnedToCore(task_output, "task_output", 1600, &param, 1, &param.task, 0);
 }
 
 void TJpgD::multitask_end ()
 {
 	param.enabled = false;
-	qwrites[0].queue = qwrites[1].queue = qline.queue = false;
 	queue_t* q = NULL;
 	xQueueSend(param.sem, &q, 0);
 	delay(10);
@@ -1078,6 +1076,7 @@ JRESULT TJpgD::decomp_multitask (
 	uint16_t x, y, mx, my;
 	uint16_t rst, rsc;
 	JRESULT rc;
+	uint8_t workbuf[768];
 
 	if (scale > (JD_USE_SCALE ? 3 : 0)) return JDR_PAR;
 	this->scale = scale;
@@ -1088,13 +1087,13 @@ JRESULT TJpgD::decomp_multitask (
 	param.linefunc = linefunc;
 	queue_t* q = &qwrites[qidx];
 	queue_t* ql = &qline;
+	queue_t* qtmp = NULL;
 
 	mx = msx * 8; my = msy * 8;			/* Size of the MCU (pixel) */
-	uint8_t bufidx = 0;
 
 	dcv[2] = dcv[1] = dcv[0] = 0;	/* Initialize DC values */
 	rst = rsc = 0;
-	uint16_t lastx = ((width - 1) / mx - 1) * mx;
+	uint16_t lastx = ((width - 1) / mx) * mx;
 	uint16_t lasty = ((height - 1) / my) * my;
 
 	uint8_t yidx = 0;
@@ -1109,29 +1108,38 @@ JRESULT TJpgD::decomp_multitask (
 				if (rc != JDR_OK) break;
 				rst = 1;
 			}
-			rc = mcu_load(this, mcubufs[bufidx], (int32_t*)workbufs[bufidx]);
+			rc = mcu_load(this, mcubufs[mcuidx], (int32_t*)workbuf);
 			if (rc != JDR_OK) break;
 			if ((!q->queue) && (skip || x < lastx)) {
-//mcubufs[bufidx][0] = 0;
-//mcubufs[bufidx][1] = 0;
-				q->mcubuf  = mcubufs[bufidx];
-				q->workbuf = workbufs[bufidx];
+//mcubufs[mcuidx][0] = 0;
+//mcubufs[mcuidx][1] = 0;
+				q->mcubuf  = mcubufs[mcuidx];
 				q->x = x;
 				q->y = y;
 				q->queue = true;
 				xQueueSend(param.sem, &q, 0);
-				bufidx = (1 + bufidx) % 3;
-				qidx = !qidx;
+				mcuidx = (1 + mcuidx) % (queue_max + 1);
+				qidx = (1 + qidx) % queue_max;
 				q = &qwrites[qidx];
 			} else {
 				while (ql->queue) taskYIELD();
-//mcubufs[bufidx][0] = 0xFF;
-//mcubufs[bufidx][1] = 0xFF;
-				rc = mcu_output(this, mcubufs[bufidx], workbufs[bufidx], outfunc, x, y);	/* Output the MCU (color space conversion, scaling and output) */
+//mcubufs[mcuidx][0] = 0xFF;
+//mcubufs[mcuidx][1] = 0xFF;
+				rc = mcu_output(this, mcubufs[mcuidx], workbuf, outfunc, x, y);	/* Output the MCU (color space conversion, scaling and output) */
 			}
 		}
 		if (rc != JDR_OK) break;
-		if (linefunc && (y == lasty || !skip)) {
+		if (linefunc && (!skip || y == lasty)) {
+			while (ql->queue) taskYIELD();
+			while (xQueueReceive(param.sem, &qtmp, 0)) {
+				if (qtmp->h == 0) {
+					mcu_output(this, qtmp->mcubuf, workbuf, outfunc, qtmp->x, qtmp->y);
+				} else {
+					linefunc(this, qtmp->y, qtmp->h);
+				}
+				qtmp->queue = false;
+			}
+
 			ql->y = y;
 			ql->h = (height < y + my) ? height - y : my;
 			ql->queue = true;
