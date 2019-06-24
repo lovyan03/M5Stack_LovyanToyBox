@@ -148,7 +148,7 @@ public:
   }
 private:
   enum
-  { DMA_BUF_LEN = 10240   // 320x32 pixel
+  { DMA_BUF_LEN = 15360   // 320x48 pixel
   , TCP_BUF_LEN = 512
   };
 
@@ -163,6 +163,7 @@ private:
   uint16_t _drawCount = 0;
   uint16_t _delayCount = 0;
   uint8_t _jpg_magnify;
+  uint8_t _lineskip;
   uint8_t _tcpBuf[TCP_BUF_LEN];
   bool _recv_requested = false;
   bool _softap = false;
@@ -255,8 +256,7 @@ private:
     uint8_t line;
 
     if (!me->_jpg_magnify) {
-      p += x;
-      if (y & 0x10) p += width * 16;
+      p += x + width * (y % ((1 + me->_lineskip) << 4));
       while (h--) {
         dst = p;
         line = w;
@@ -267,10 +267,10 @@ private:
         p += width;
       }
     } else {
+      uint8_t r, g, b;
       uint8_t yy = 0;
       uint16_t addy = width << 1;
-      uint8_t r, g, b;
-      p += x << 1;
+      p += x + addy * (y % ((1 + me->_lineskip) << 4)) << 1;
       while (h--) {
         dst = p + ((addy * yy) << 1);
         line = w;
@@ -294,19 +294,11 @@ private:
 
   static uint16_t jpgLine(TJpgD *jdec, uint16_t y, uint8_t h) {
     TCPReceiver* me = (TCPReceiver*)jdec->device;
-    uint8_t magnify = me->_jpg_magnify;
-    if (!magnify) {
-      if (y & 0x10) {
-        y -= 16;
-        h += 16;
-      } else if (h + y < jdec->height) {
-        return 1;
-      }
-    }
+    uint8_t mag = me->_jpg_magnify;
     me->_dma.draw( me->_jpg_x
-                 , me->_jpg_y + (y << magnify)
-                 , jdec->width << magnify
-                 , h << magnify
+                 , me->_jpg_y + (y << mag)
+                 , jdec->width << mag
+                 , h << mag
                  );
     return 1;
   }
@@ -325,24 +317,23 @@ private:
     uint32_t ms2 = micros();
 
     uint8_t bayer;
-    uint8_t lineskip;
     if (_jdec.width > 160 || _jdec.height > 120) {
       _jpg_magnify = 0;
       bayer = 1;
-      lineskip = 1;
+      _lineskip = 2;
       _jpg_x = 160 - _jdec.width/2;
       _jpg_y = 120 - _jdec.height/2;
     } else {
       _jpg_magnify = 1;
       bayer = 0;
-      lineskip = 0;
+      _lineskip = 0;
       _jpg_x = 160 - _jdec.width;
       _jpg_y = 120 - _jdec.height;
     }
     if (M5.BtnC.isPressed()) {  // DEBUG
-      jres = _jdec.decomp(jpgWrite, jpgLine, 0, bayer, lineskip);
+      jres = _jdec.decomp(jpgWrite, jpgLine, 0, bayer, _lineskip);
     } else {
-      jres = _jdec.decomp_multitask(jpgWrite, jpgLine, 0, bayer, lineskip);
+      jres = _jdec.decomp_multitask(jpgWrite, jpgLine, 0, bayer, _lineskip);
     }
     uint32_t ms3 = micros();
     if (jres != JDR_OK) {

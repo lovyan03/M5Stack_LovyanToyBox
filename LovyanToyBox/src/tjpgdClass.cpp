@@ -68,18 +68,16 @@ static const uint16_t Ipsf[64] = {	/* See also aa_idct.png */
 /* Output bayer pattern table                  */
 /*---------------------------------------------*/
 
-static const int8_t Bayer[4][16] = {
+static const int8_t Bayer[8][16] = {
 	{ 0, 4, 1, 5,-2, 2,-1, 3, 1, 5, 0, 4,-1, 3,-2, 2},
+	{ 1, 5, 2,-2,-1, 3, 0, 4, 2,-2, 1, 5, 0, 4,-1, 3},
 	{ 2,-2, 3,-1, 0, 4, 1, 5, 3,-1, 2,-2, 1, 5, 0, 4},
+	{ 3,-1, 4, 0, 1, 5, 2,-2, 4, 0, 3,-1, 2,-2, 1, 5},
 	{ 4, 0, 5, 1, 2,-2, 3,-1, 5, 1, 4, 0, 3,-1, 2,-2},
-	{-2, 2,-1, 3, 4, 0, 5, 1,-1, 3,-2, 2, 5, 1, 4, 0}
+	{ 5, 1,-2, 2, 3,-1, 4, 0,-2, 2, 5, 1, 4, 0, 3,-1},
+	{-2, 2,-1, 3, 4, 0, 5, 1,-1, 3,-2, 2, 5, 1, 4, 0},
+	{-1, 3, 0, 4, 5, 1,-2, 2, 0, 4,-1, 3,-2, 2, 5, 1}
 };
-/*
-//	{ 1, 9, 3,11,13, 5,-1, 7, 4,12, 2,10, 0, 8,-2, 6}
-	{ 5,13, 7,-1, 1, 9, 3,11, 8, 0, 6,-2, 4,12, 2,10},
-	{ 9, 1,11, 3, 5,13, 7,-1,12, 4,10, 2, 8, 0, 6,-2},
-	{13, 5,-1, 7, 9, 1,11, 3, 0, 8,-2, 6,12, 4,10, 2},
-*/
 
 
 /*---------------------------------------------*/
@@ -957,7 +955,7 @@ JRESULT TJpgD::decomp (
 	uint16_t (*outfunc)(TJpgD*, void*, JRECT*),	/* RGB output function */
 	uint16_t (*linefunc)(TJpgD*,uint16_t,uint8_t),
 	uint8_t scale,							/* Output de-scaling factor (0 to 3) */
-	uint8_t bayer,							/* Output bayer gain */
+	uint8_t bayer,							/* Use bayer gain */
 	uint8_t lineskip						/* linefunc skip number */
 )
 {
@@ -966,15 +964,17 @@ JRESULT TJpgD::decomp (
 	JRESULT rc;
 	uint8_t workbuf[768];
 	uint8_t mcubuf[384];
+	uint8_t yidx = 0;
 
 	if (scale > (JD_USE_SCALE ? 3 : 0)) return JDR_PAR;
 	this->scale = scale;
-	this->bayer = bayer ? (this->bayer % 4) + 1 : 0;
+	this->bayer = bayer ? (this->bayer & 7) + 1 : 0;
 
 	mx = msx * 8; my = msy * 8;			/* Size of the MCU (pixel) */
 
 	dcv[2] = dcv[1] = dcv[0] = 0;	/* Initialize DC values */
 	rst = rsc = 0;
+	uint16_t lasty = ((height - 1) / my) * my;
 
 	rc = JDR_OK;
 	for (y = 0; y < height; y += my) {		/* Vertical loop of MCUs */
@@ -989,7 +989,12 @@ JRESULT TJpgD::decomp (
 			rc = mcu_output(this, mcubuf, (uint8_t*)workbuf, outfunc, x, y);	/* Output the MCU (color space conversion, scaling and output) */
 			if (rc != JDR_OK) return rc;
 		}
-		if (linefunc) linefunc(this, y, (height < y + my) ? height - y : my);
+		if (linefunc && (yidx == lineskip || y == lasty)) {
+			linefunc(this, y - yidx * my, yidx * my + ((height < y + my) ? height - y : my));
+			yidx = 0;
+		} else {
+			++yidx;
+		}
 	}
 
 	return rc;
@@ -1012,12 +1017,11 @@ typedef struct {
 	TJpgD* jd;
 	uint16_t (*outfunc)(TJpgD*, void*, JRECT*);
 	uint16_t (*linefunc)(TJpgD*,uint16_t,uint8_t);
-	volatile bool enabled;
 	QueueHandle_t sem;
 	TaskHandle_t task;
 } param_task_output;
 
-static const uint8_t queue_max = 16;
+static const uint8_t queue_max = 20;
 static param_task_output param;
 static uint8_t mcubufs[queue_max + 1][384];
 static queue_t qwrites[queue_max];
@@ -1031,18 +1035,17 @@ static void task_output(void* arg)
 	param_task_output* p = (param_task_output*)arg;
 	queue_t* q;
 //Serial.println("task_output start");
-	while (p->enabled) {
+	for (;;) {
 		if (!xQueueReceive(p->sem, &q, -1)) continue;
-		if (q && q->queue) {
+		if (!q) break;
 //Serial.printf("task work: X=%d,Y=%d\r\n",q->x,q->y);
-			if (q->h == 0) {
-				mcu_output(p->jd, q->mcubuf, workbuf, p->outfunc, q->x, q->y);
-			} else {
-				p->linefunc(p->jd, q->y, q->h);
-			}
-			q->queue = false;
-//Serial.println("task work done");
+		if (q->h == 0) {
+			mcu_output(p->jd, q->mcubuf, workbuf, p->outfunc, q->x, q->y);
+		} else {
+			p->linefunc(p->jd, q->y, q->h);
 		}
+		q->queue = false;
+//Serial.println("task work done");
 	}
 	vQueueDelete(p->sem);
 //Serial.println("task_output end");
@@ -1051,7 +1054,6 @@ static void task_output(void* arg)
 
 void TJpgD::multitask_begin ()
 {
-	param.enabled = true;
 	param.sem = xQueueCreate(queue_max + 1, sizeof(queue_t*));
 
 	xTaskCreatePinnedToCore(task_output, "task_output", 1600, &param, 1, &param.task, 0);
@@ -1059,7 +1061,6 @@ void TJpgD::multitask_begin ()
 
 void TJpgD::multitask_end ()
 {
-	param.enabled = false;
 	queue_t* q = NULL;
 	xQueueSend(param.sem, &q, 0);
 	delay(10);
@@ -1069,7 +1070,7 @@ JRESULT TJpgD::decomp_multitask (
 	uint16_t (*outfunc)(TJpgD*, void*, JRECT*),	/* RGB output function */
 	uint16_t (*linefunc)(TJpgD*,uint16_t,uint8_t),
 	uint8_t scale,							/* Output de-scaling factor (0 to 3) */
-	uint8_t bayer,							/* Output bayer gain */
+	uint8_t bayer,							/* Use bayer gain */
 	uint8_t lineskip						/* linefunc skip number */
 )
 {
@@ -1077,10 +1078,12 @@ JRESULT TJpgD::decomp_multitask (
 	uint16_t rst, rsc;
 	JRESULT rc;
 	uint8_t workbuf[768];
+	uint8_t yidx = 0;
+
 
 	if (scale > (JD_USE_SCALE ? 3 : 0)) return JDR_PAR;
 	this->scale = scale;
-	this->bayer = bayer ? (this->bayer % 4) + 1 : 0;
+	this->bayer = bayer ? (this->bayer & 7) + 1 : 0;
 
 	param.jd = this;
 	param.outfunc = outfunc;
@@ -1093,15 +1096,12 @@ JRESULT TJpgD::decomp_multitask (
 
 	dcv[2] = dcv[1] = dcv[0] = 0;	/* Initialize DC values */
 	rst = rsc = 0;
-	uint16_t lastx = ((width - 1) / mx) * mx;
 	uint16_t lasty = ((height - 1) / my) * my;
 
-	uint8_t yidx = 0;
-	uint8_t skip = 0;
+	ql->h = (lineskip + 1) * my;
 
 	rc = JDR_OK;
 	for (y = 0; y < height; y += my) {		/* Vertical loop of MCUs */
-		skip = lineskip && (yidx != lineskip);
 		for (x = 0; x < width; x += mx) {	/* Horizontal loop of MCUs */
 			if (nrst && rst++ == nrst) {	/* Process restart interval if enabled */
 				rc = restart(this, rsc++);
@@ -1110,7 +1110,7 @@ JRESULT TJpgD::decomp_multitask (
 			}
 			rc = mcu_load(this, mcubufs[mcuidx], (int32_t*)workbuf);
 			if (rc != JDR_OK) break;
-			if ((!q->queue) && (skip || x < lastx)) {
+			if (!q->queue) {
 //mcubufs[mcuidx][0] = 0;
 //mcubufs[mcuidx][1] = 0;
 				q->mcubuf  = mcubufs[mcuidx];
@@ -1125,24 +1125,21 @@ JRESULT TJpgD::decomp_multitask (
 				while (ql->queue) taskYIELD();
 //mcubufs[mcuidx][0] = 0xFF;
 //mcubufs[mcuidx][1] = 0xFF;
-				rc = mcu_output(this, mcubufs[mcuidx], workbuf, outfunc, x, y);	/* Output the MCU (color space conversion, scaling and output) */
+				rc = mcu_output(this, mcubufs[mcuidx], workbuf, outfunc, x, y);
 			}
 		}
 		if (rc != JDR_OK) break;
-		if (linefunc && (!skip || y == lasty)) {
+		if (linefunc && (yidx == lineskip || y == lasty)) {
 			while (ql->queue) taskYIELD();
+			if (y == lasty) ql->h = yidx * my + height - y;
+			ql->y = y - yidx * my;
+			ql->queue = true;
 			while (xQueueReceive(param.sem, &qtmp, 0)) {
-				if (qtmp->h == 0) {
-					mcu_output(this, qtmp->mcubuf, workbuf, outfunc, qtmp->x, qtmp->y);
-				} else {
-					linefunc(this, qtmp->y, qtmp->h);
-				}
+//qtmp->mcubuf[0] = 0xFF;
+//qtmp->mcubuf[1] = 0xFF;
+				mcu_output(this, qtmp->mcubuf, workbuf, outfunc, qtmp->x, qtmp->y);
 				qtmp->queue = false;
 			}
-
-			ql->y = y;
-			ql->h = (height < y + my) ? height - y : my;
-			ql->queue = true;
 			xQueueSend(param.sem, &ql, 0);
 			yidx = 0;
 		} else {
