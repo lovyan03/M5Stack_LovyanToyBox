@@ -48,36 +48,40 @@ I_RD_REG(RTC_GPIO_IN_REG, 17, 17)
   R0 = bit17 (GPIO39  BtnA status)
 
 */
-
     const ulp_insn_t ulp_bl[] = {
-    I_MOVI(R1, 5),      // 消灯ループ回数をR1に代入(輝度調整用)
+    I_MOVI(R1, 5),      // R1 輝度調整用
   M_LABEL(1),  // label_1
-    I_MOVI(R2, 0),      // 押下フラグ オフ
+    I_MOVI(R2, 0),      // R2 押下フラグ
   M_LABEL(2),  // label_2
+    I_RD_REG(RTC_GPIO_IN_REG, 16, 16), // BtnB状態をR0に取得
+    M_BGE(3, 1),        // ボタン押されてなければlabel_3ジャンプ
+    I_END(),            // プログラムタイマ停止
+    I_HALT(),           // ULPコプロセッサ停止
+  M_LABEL(3),
     I_WR_REG(RTC_GPIO_OUT_REG, 23, 23, 1), // GPIO32にHighを出力(点灯)
-    I_DELAY(500),      // 待つ
+    I_DELAY(500),       // 待つ
     I_WR_REG(RTC_GPIO_OUT_REG, 23, 23, 0), // GPIO32にLowを出力(消灯)
-    I_MOVI(R0, 1),
-    I_LSHR(R0, R0, R1),
-  M_LABEL(3),  // label_3
+    I_MOVI(R0, 1),      // R0に１を代入
+    I_LSHR(R0, R0, R1), // R0をR1の数だけ左シフトしてループ回数を生成
+  M_LABEL(4),  // label_4
     I_DELAY(100),       // 待つ
     I_SUBI(R0, R0, 1),  // R0から1引く
-    M_BGE(3, 1),        // R0が1以上ならlabel_3ジャンプ
+    M_BGE(4, 1),        // R0が1以上ならlabel_4ジャンプ
     I_RD_REG(RTC_GPIO_IN_REG, 17, 17), // BtnA状態をR0に取得
-    M_BGE(4, 1),        // ボタン押されてなければlabel_4ジャンプ
+    M_BGE(5, 1),        // ボタン押されてなければlabel_5ジャンプ
     I_MOVR(R0, R2),     // 押下フラグをR0にコピー
     M_BGE(2, 1),        // 押しっぱなしならlabel_2ジャンプ
     I_MOVI(R2, 1),      // 押下フラグ オン
     I_ADDI(R1, R1, 1),  // R1に1足す
     M_BX(2),            // label_2ジャンプ
-  M_LABEL(4),  // label_4
+  M_LABEL(5),  // label_5
     I_RD_REG(RTC_GPIO_IN_REG, 15, 15), // BtnC状態をR0に取得
     M_BGE(1, 1),        // ボタン押されてなければlabel_1ジャンプ
     I_MOVR(R0, R2),     // 押下フラグをR0にコピー
     M_BGE(2, 1),        // 押しっぱなしならlabel_2ジャンプ
     I_MOVI(R2, 1),      // 押下フラグ オン
     I_MOVR(R0, R1),     // 消灯ループ回数をR0にコピー
-    M_BL(2, 2),         // 2未満ならlabel_2ジャンプ
+    M_BL(2, 1),         // 1未満ならlabel_2ジャンプ
     I_SUBI(R1, R1, 1),  // R1から1引く
     M_BX(2)             // label_2ジャンプ
     };
@@ -87,6 +91,7 @@ I_RD_REG(RTC_GPIO_IN_REG, 17, 17)
     };
     const gpio_num_t btn_gpios[] = {
       GPIO_NUM_37,
+      GPIO_NUM_38,
       GPIO_NUM_39
     };
     ledcDetachPin(TFT_BL);
