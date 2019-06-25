@@ -5,17 +5,17 @@
 #include <MenuItemToggle.h>
 #include <esp_sleep.h>
 
-#include "src/Header.h"
-#include "src/ScrollDemo.h"
-#include "src/MPU9250Demo.h"
-#include "src/IP5306RegEdit.h"
-#include "src/TCPReceiver.h"
 #include "src/AD34FFTTaskDemo.h"
 #include "src/ADInputDemo.h"
+#include "src/ULPBackLight.h"
+#include "src/Header.h"
+#include "src/IP5306RegEdit.h"
+#include "src/MPU9250Demo.h"
+#include "src/ScrollDemo.h"
+#include "src/TCPReceiver.h"
 
 M5TreeView treeView;
 
-constexpr uint8_t NEOPIXEL_pin = 15;
 constexpr char* preferName     ( "LovyanLauncher" );
 constexpr char* preferKeyStyle ( "TVStyle" );
 void drawFrame() {
@@ -129,6 +129,7 @@ void setup() {
                , new MenuItem("MPU9250Demo"  , callBackExec<MPU9250Demo>)
                , new MenuItem("ADInputDemo"  , callBackExec<ADInputDemo>)
                , new MenuItem("FIRE MicFFT"  , callBackExec<AD34FFTTaskDemo>)
+               , new MenuItem("ULP BackLight Demo", callBackExec<ULPBackLight>)
                , new MenuItem("IP5306 Registry", 0x75, callBackRegEdit<IP5306RegEdit>)
                , new MenuItem("OTA Rollback", vmi
                    { new MenuItem("Rollback Execute", callBackRollBack)
