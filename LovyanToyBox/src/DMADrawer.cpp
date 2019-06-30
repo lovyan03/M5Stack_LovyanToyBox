@@ -8,6 +8,7 @@
 #include <driver/spi_master.h>
 
 static spi_device_handle_t _spi = NULL;
+static spi_transaction_t trans[6];
 
 static void lcd_spi_pre_transfer_callback(spi_transaction_t *t)
 {
@@ -59,7 +60,20 @@ bool DMADrawer::setup(uint32_t buflen)
   _lastY = -1;
   _lastW = -1;
   _lastH = -1;
-  for (int i = 0; i < 6; ++i) { _sent[i] = false; }
+  for (int i = 0; i < 6; ++i) {
+    _sent[i] = false;
+    trans[i].flags = SPI_TRANS_USE_TXDATA;
+    trans[i].user = (void *)(i & 1);
+    trans[i].cmd = trans[i].addr = trans[i].rxlength = 0;
+    if (trans[i].user)
+    {
+      trans[i].length = 8 * 4;
+    } else {
+      trans[i].length = 8;
+      trans[i].tx_data[0] = 0x2A + (i>>1);
+    }
+  }
+  trans[5].flags = 0;
   if (_spi == NULL)  _spi = spi_start(buflen);
   return true;
 }
@@ -78,26 +92,15 @@ uint16_t* DMADrawer::getNextBuffer() {
 void DMADrawer::draw(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
 {
   esp_err_t ret;
-  static spi_transaction_t trans[6];
-  spi_transaction_t *rtrans;
+  spi_transaction_t *tr;
   for (uint8_t i = 0; i < 6; i++)
   {
     if (_sent[i]) {
-      ret = spi_device_get_trans_result(_spi, &rtrans, portMAX_DELAY);
+      ret = spi_device_get_trans_result(_spi, &tr, portMAX_DELAY);
       assert(ret == ESP_OK);
       _sent[i] = false;
     }
-    memset(&trans[i], 0, sizeof(spi_transaction_t));
-    if ((i & 1) == 0)
-    {
-        trans[i].length = 8;
-        trans[i].user = (void *)0;
-        trans[i].tx_data[0] = 0x2A + (i>>1);
-    } else {
-        trans[i].length = 8 * 4;
-        trans[i].user = (void *)1;
-    }
-    trans[i].flags = SPI_TRANS_USE_TXDATA;
+    tr = &trans[i];
     switch (i) {
     case 0:
       if (_lastX == x && _lastW == w) continue;
@@ -105,10 +108,10 @@ void DMADrawer::draw(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
 
     case 1:
       if (_lastX == x && _lastW == w) continue;
-      trans[1].tx_data[0] = x >> 8;             //Start Col High
-      trans[1].tx_data[1] = x & 0xFF;           //Start Col Low
-      trans[1].tx_data[2] = (x + w - 1) >> 8;   //End Col High
-      trans[1].tx_data[3] = (x + w - 1) & 0xFF; //End Col Low
+      tr->tx_data[0] = x >> 8;             //Start Col High
+      tr->tx_data[1] = x & 0xFF;           //Start Col Low
+      tr->tx_data[2] = (x + w - 1) >> 8;   //End Col High
+      tr->tx_data[3] = (x + w - 1) & 0xFF; //End Col Low
       break;
 
     case 2:
@@ -117,20 +120,20 @@ void DMADrawer::draw(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
 
     case 3:
       if (_lastY == y && _lastH == h) continue;
-      trans[3].tx_data[0] = y >> 8;             //Start page high
-      trans[3].tx_data[1] = y & 0xFF;           //start page low
-      trans[3].tx_data[2] = (y + h - 1) >> 8;   //end page high
-      trans[3].tx_data[3] = (y + h - 1) & 0xFF; //end page low
+      tr->tx_data[0] = y >> 8;             //Start page high
+      tr->tx_data[1] = y & 0xFF;           //start page low
+      tr->tx_data[2] = (y + h - 1) >> 8;   //end page high
+      tr->tx_data[3] = (y + h - 1) & 0xFF; //end page low
       break;
 
     case 5:
-      trans[5].tx_buffer = _pixBuf[_pixFlip];    //finally send the line data
-      trans[5].length = w * 2 * 8 * h;          //Data length, in bits
-      trans[5].flags = 0;                       //undo SPI_TRANS_USE_TXDATA flag
+      tr->tx_buffer = _pixBuf[_pixFlip];   //finally send the line data
+      tr->length = w * h * 16;             //Data length, in bits
       _pixFlip = !_pixFlip;
       break;
     }
-    ret = spi_device_queue_trans(_spi, &trans[i], portMAX_DELAY);
+    tr->rxlength = 0;
+    ret = spi_device_queue_trans(_spi, tr, portMAX_DELAY);
     assert(ret == ESP_OK);
     _sent[i] = true;
   }

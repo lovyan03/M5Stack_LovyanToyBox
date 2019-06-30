@@ -87,7 +87,6 @@ public:
        && _tcpBuf[1] == 'P'
        && _tcpBuf[2] == 'G') {
         _recv_remain = *(uint16_t*)&_tcpBuf[3];
-        _recv_requested = false;
         if (_recv_remain > 600) {
           if (drawJpg()) {
             ++_drawCount;
@@ -207,6 +206,9 @@ private:
     }
 
     if (len == TJPGD_SZBUF) {
+      if (me->_recv_requested) {
+        me->_recv_requested = false;
+      } else
       if (me->_recv_remain < TJPGD_SZBUF*2 && TJPGD_SZBUF < me->_recv_remain) { // dataend read tweak
         len = me->_recv_remain - len;
       }
