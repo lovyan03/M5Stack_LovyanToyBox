@@ -1098,8 +1098,6 @@ JRESULT TJpgD::decomp_multitask (
 	rst = rsc = 0;
 	uint16_t lasty = ((height - 1) / my) * my;
 
-	ql->h = (lineskip + 1) * my;
-
 	rc = JDR_OK;
 	for (y = 0; y < height; y += my) {		/* Vertical loop of MCUs */
 		for (x = 0; x < width; x += mx) {	/* Horizontal loop of MCUs */
@@ -1131,15 +1129,15 @@ JRESULT TJpgD::decomp_multitask (
 		if (rc != JDR_OK) break;
 		if (linefunc && (yidx == lineskip || y == lasty)) {
 			while (ql->queue) taskYIELD();
-			if (y == lasty) ql->h = yidx * my + height - y;
-			ql->y = y - yidx * my;
-			ql->queue = true;
 			while (xQueueReceive(param.sem, &qtmp, 0)) {
 //qtmp->mcubuf[0] = 0xFF;
 //qtmp->mcubuf[1] = 0xFF;
 				mcu_output(this, qtmp->mcubuf, workbuf, outfunc, qtmp->x, qtmp->y);
 				qtmp->queue = false;
 			}
+			ql->h = (y == lasty) ? (yidx * my + height - y) : ((lineskip + 1) * my);
+			ql->y = y - yidx * my;
+			ql->queue = true;
 			xQueueSend(param.sem, &ql, 0);
 			yidx = 0;
 		} else {

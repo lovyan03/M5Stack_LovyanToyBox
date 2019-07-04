@@ -37,7 +37,7 @@ static spi_device_handle_t spi_start(uint16_t len)
       .duty_cycle_pos = 0,
       .cs_ena_pretrans = 0,
       .cs_ena_posttrans = 0,
-      .clock_speed_hz = 40 * 1000 * 1000,
+      .clock_speed_hz = SPI_MASTER_FREQ_40M,
       .input_delay_ns = 0,
       .spics_io_num = TFT_CS_PIN, //CS pin
       .flags = 0,
@@ -152,6 +152,7 @@ void DMADrawer::draw_finish()
     if (!_sent[i]) continue;
     ret = spi_device_get_trans_result(_spi, &rtrans, portMAX_DELAY);
     assert(ret == ESP_OK);
+    _sent[i] = false;
   }
 }
 

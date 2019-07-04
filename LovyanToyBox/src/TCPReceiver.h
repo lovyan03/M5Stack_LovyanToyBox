@@ -72,9 +72,10 @@ public:
   {
     _client = _tcp.available();
     if (_client.connected()) _client.stop();
+    _jdec.multitask_end();
+    delay(100);
     _tcp.stop();
     _dma.close();
-    _jdec.multitask_end();
   }
 
   bool loop()
